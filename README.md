@@ -1,7 +1,10 @@
 # Unicorn Run
 *Build a fast, cute, top-down maze game in HTML Canvas where the player collects gems while an angry unicorn chases them.*
 **Version:** 1.0  
-**Author:** Baden + Uviwe the one who begged to make a roblox game and she wanted to play it.
+**Author:** Baden + Uviwe (8-years old) the one who begged to make a roblox game and she wanted to play it.
+
+Play the borning non-roblox game at:
+https://twinpictures.de/unicorn-run/
 
 ---
 

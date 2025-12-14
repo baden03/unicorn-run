@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unicorn Run</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="672" height="480"></canvas>
+    </div>
+    
+    <!-- Left Joystick - outside canvas -->
+    <div id="joystickLeft" class="joystick">
+        <div class="joystick-base"></div>
+        <div class="joystick-stick" id="joystickLeftStick"></div>
+    </div>
+    
+    <!-- Right Joystick - outside canvas -->
+    <div id="joystickRight" class="joystick">
+        <div class="joystick-base"></div>
+        <div class="joystick-stick" id="joystickRightStick"></div>
+    </div>
+    
+    <div id="ui">
+        <div id="score">Score: 0</div>
+        <div id="status">Press Space to Start</div>
+        <button id="startButton" class="start-button">Start Game</button>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
