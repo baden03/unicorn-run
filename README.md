@@ -1,9 +1,9 @@
 # Unicorn Run
 *Build a fast, cute, top-down maze game in HTML Canvas where the player collects gems while an angry unicorn chases them.*
-**Version:** 1.0  
+**Version:** 1.1  
 **Author:** Baden + Uviwe (8-years old) the one who begged to make a roblox game and she wanted to play it.
 
-Play the borning non-roblox game at:
+Play v1 of the borning non-roblox game at:
 https://twinpictures.de/unicorn-run/
 
 ---
@@ -13,22 +13,26 @@ https://twinpictures.de/unicorn-run/
 Create a first-success game that is:
 - Fun within the first hour of building
 - Easy to understand and extend
-- Built with plain HTML, CSS, and JavaScript (no libraries)
+- Built with HTML, CSS, and JavaScript
 
 ### 1.2 Design Goals
 - Simple rules, immediate feedback (score goes up, gem respawns)
 - Predictable physics and collisions using a tile-based maze (grid)
 - Clean separation between game state, rendering, and input
 - A clear roadmap for add-on projects (lives, power-ups, two player, smarter AI)
+- Runs seamlessly on Desktop and Mobile devices
 
 ---
 
 ## 2. Game Summary
-Unicorn Run is a top-down, Pac-Man-style chase game:
-- The player navigates a maze to collect gems.
+Unicorn Run is a top-down, Pac-Man-clone chase game:
+- The player navigates a maze eating dots.
+- Each dot increases score.
+- When all dots are gone, the next maze is loaded.
 - An angry unicorn chases the player.
-- Each gem collected increases score.
 - Getting caught ends the game in the MVP (later becomes “lose a heart and respawn”).
+- A gem is randomly spawned on the maze.
+- Eating a gem makes the player invincible to the unicorn for a number of seconds.
 
 ---
 
@@ -39,6 +43,10 @@ Use a grid-based maze to simplify collisions and movement logic.
 - Tile types:
   - 0 = floor (walkable)
   - 1 = wall (blocked)
+  - 2 = corner
+  - 3 = 3-way t intersection
+  - 4 = 4-way x intersection
+  - 5 = side portal wrap-around
 
 Recommended tile size for Canvas:
 - TILE = 32 px (good visibility and easy math)
@@ -58,16 +66,29 @@ Movement approach (simple and reliable):
 - Each frame, propose new position
 - Convert proposed position to tile index
 - If the target tile is a wall, block movement along that axis
+- if the target tile is a corner, block movement along walled access
+- if the target title is a 3-way, block movement along one axis
+- if the target tile is a 4-way, allow 4 axis movement
+- if th etarget tile is a portal, wrap the user to the other side of the maze.
 
 This allows smooth motion while preserving simple collision rules.
 
-### 3.3 Gems
+### 3.3 Dots
+Dots appear on all un travled floor titles.
+- When collected:
+  - score += 1
+
+Dot collection:
+- If player rectangle overlaps dot rectangle (or distance threshold), dot is collected
+
+### 3.4 Gems
 Gems appear on random floor tiles.
 - Only spawn on floor tiles
 - Do not spawn on player or unicorn tile
 - When collected:
-  - score += 1
-  - respawn a new gem
+  - n seconds of invincibility, denoted by the unicorn cycling colors of the rainbow.
+  - after the invincibility time, the unicorn returns to pink.
+  - after a short time peirod respawn a new gem
 
 Gem collection:
 - If player rectangle overlaps gem rectangle (or distance threshold), gem is collected
@@ -75,20 +96,22 @@ Gem collection:
 ### 3.4 Unicorn Chase (MVP AI)
 Start with a simple chase so it is easy to build and debug.
 - The unicorn moves at a constant speed
-- Each update, it chooses a direction that reduces distance to player:
+- At each intersection and corner, it chooses a 'greedy' direction that reduces distance to player:
   - Compare horizontal vs vertical distance
   - Try moving in the dominant direction first
-  - If blocked by wall, try the other axis
-  - If both blocked, do nothing (or pick a random valid turn)
+  - If blocked by wall, try another free axis
+  - If the selected free axis puts the unicorn in a reverse direction:
+    - Switch to 'random' rules where the unicorn makes random axis selections on the next two intersections
+    - return to 'greedy' rules
 
-This “greedy chase” is not perfect pathfinding, but feels like a chase and is easy.
+This “greedy + random chase” is not perfect pathfinding, but feels like a chase and is easy to understand.
 
 ### 3.5 Win/Lose Conditions (MVP)
 MVP Lose:
-- If unicorn collides with player: Game Over
+- If unicorn collides with player when not not in invincible (rainbow unicorn mode): Game Over
 
 MVP Win (optional):
-- Collect N gems (e.g., 10) OR survive a timer (e.g., 30 seconds)
+- Collect all dots. Later multiple maze levels can be added
 
 ---
 
@@ -98,14 +121,17 @@ Canvas rendering should be simple shapes first, then upgraded to sprites later.
 ### 4.1 Rendering Palette (Conceptual)
 - Walls: solid blocks
 - Floor: light background
-- Player: circle or rounded rectangle
-- Unicorn: rounded rectangle + small triangle “horn”
+- Player: circle
+- Unicorn: pink rounded rectangle + small triangle “horn”
+- Dots: 1/3 size of player
 - Gems: diamond shape or circle with sparkle strokes
 
 ### 4.2 UI Overlay
 Draw HUD at top or above canvas:
 - Score: 0+
-- State: “Press Space to Start”, “Game Over”, “You Win”
+- State: “Press Space or Button to Start”, “Game Over”, “You Win”
+- A joysticks placed to the right of maze for mobile devices in landscape roatation and at the bottom of the maze in portrate orientation.
+- Canvas is resized to fit mobile screen viewport
 
 Use DOM for text UI if preferred (simpler), or draw text on canvas.
 
@@ -113,29 +139,23 @@ Use DOM for text UI if preferred (simpler), or draw text on canvas.
 
 ## 5. Controls
 MVP controls:
-- Arrow keys OR WASD
-- Space:
+- Arrow keys OR WASD OR Joystick on mobile devices
+- Space and Start Button:
   - Start from title screen
   - Restart from game over
-
-Optional:
-- Shift for “dash” (later power-up or stamina)
 
 ---
 
 ## 6. Technical Architecture
 ### 6.1 Files
-Start with a single file for quick success:
-- index.html (includes CSS and JS in <style> and <script>)
-
-Then expand into:
+Start with seperation of file types:
 - index.html
 - styles.css
 - game.js
 
 ### 6.2 Game State
 Recommended state variables:
-- gameState: "title" | "playing" | "gameover" | "win"
+- gameState: "title" | "playing_normal" | "playing_invincible" | "gameover" | "win"
 - score: number
 - maze: number[][]
 - tileSize: number
@@ -143,10 +163,15 @@ Recommended state variables:
 Entities:
 - player: { x, y, w, h, speed, dirX, dirY }
 - unicorn: { x, y, w, h, speed }
+- dots: number[][]
 - gem: { x, y, w, h }
+- invincible_time: number
+- recovery_time: number
 
 Input:
 - keysDown: Set or object map (ArrowUp, ArrowDown, etc.)
+- Start Button
+- Joystick
 
 ### 6.3 Game Loop
 Use requestAnimationFrame for smooth rendering:
@@ -170,126 +195,4 @@ To prevent passing through walls:
 
 Simplest wall test:
 - Determine which tiles the entity would occupy after moving
-- If any are walls, block that axis movement
-
----
-
-## 7. Implementation Milestones (Success-Oriented)
-### 7.1 Milestone 1: The Maze on Canvas
-- Create canvas sized to maze dimensions (cols*TILE, rows*TILE)
-- Draw walls and floors
-
-Success check:
-- You see a maze.
-
-### 7.2 Milestone 2: Player Movement + Wall Blocking
-- Add player entity
-- Keyboard input
-- Collision against walls
-
-Success check:
-- Player moves and cannot go through walls.
-
-### 7.3 Milestone 3: Gem Spawn + Score
-- Place gem randomly on floor
-- Detect collection
-- Increase score and respawn
-
-Success check:
-- Score increases as you collect gems.
-
-### 7.4 Milestone 4: Unicorn Chase + Game Over
-- Add unicorn entity
-- Move unicorn toward player using greedy chase
-- Detect player-unicorn collision
-
-Success check:
-- It feels like a chase game.
-
-### 7.5 Milestone 5: Title Screen + Restart
-- gameState transitions
-- Space to start/restart
-
-Success check:
-- The game is complete and replayable.
-
----
-
-## 8. Expansion Roadmap (Add-On Projects)
-### 8.1 Lives / Hearts and Respawn
-- lives = 3
-- On catch:
-  - lives -= 1
-  - respawn player at start tile
-  - respawn unicorn at its start tile
-  - grant 1–2 seconds of invincibility
-
-### 8.2 Power-Ups (Potions)
-Spawn potion occasionally (e.g., every 8–12 seconds).
-Types:
-- Freeze Unicorn (3 seconds)
-- Speed Boost (5 seconds)
-- Shield (one hit negated)
-
-Implementation:
-- currentPowerUp: "none" | "freeze" | "speed" | "shield"
-- powerUpTimerMs
-
-### 8.3 Smarter Unicorn (Pathfinding)
-Upgrade chase to BFS on the tile grid:
-- Compute shortest path from unicorn tile to player tile
-- Move unicorn along that path
-
-This is a “big upgrade” but clean because the maze is a grid.
-
-### 8.4 Two Player
-Add player2:
-- Player 1: WASD
-- Player 2: Arrow keys
-
-Modes:
-- Co-op collecting gems
-- Versus: one player controls unicorn (later)
-
-### 8.5 Difficulty Scaling
-- Unicorn speed increases every 5 gems
-- Add a second unicorn after score reaches 10
-- Add moving hazards later (optional)
-
-### 8.6 Levels
-- Maintain an array of mazes
-- When score reaches threshold, load next maze
-- Track best score per level
-
----
-
-## 9. Content Customization (For Uviwe)
-Theme hooks to keep it fun:
-- Rename gems (sparkles, stars, crystals)
-- Unicorn moods (angry, silly, sleepy)
-- Victory messages
-- Cute sound effects for gem pickup (optional)
-- “Statue of Nevermore” as a special rare gem (later)
-
----
-
-## 10. Definition of Done (MVP)
-The MVP is done when:
-- Maze renders on canvas
-- Player moves with keys and is blocked by walls
-- Gems spawn randomly on valid floor tiles
-- Collecting gems increases score and respawns the gem
-- Unicorn chases the player
-- Collision with unicorn triggers Game Over
-- Space key restarts the game
-
----
-
-## 11. Next Step
-Choose initial constraints for the first build:
-- Maze size: 15x21 recommended
-- Tile size: 32 px recommended
-- Player speed: ~140 px/sec (tune later)
-- Unicorn speed: ~110 px/sec (tune later)
-
-Then build milestones 1–4 in order to get a working game fast.
+- If any are walls, block that axis of movement
