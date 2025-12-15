@@ -1,0 +1,231 @@
+body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-width: 100vw;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    font-family: 'Arial', sans-serif;
+    touch-action: none; /* Prevent default touch behaviors */
+    user-select: none; /* Prevent text selection on mobile */
+    overflow: hidden; /* Prevent scrolling */
+}
+
+#gameContainer {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100vw;
+    max-height: calc(100vh - 100px); /* Leave space for UI */
+    min-height: 0; /* Allow flex shrinking */
+    width: 100%;
+    flex: 1;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+/* Better landscape handling */
+@media (orientation: landscape) and (max-height: 600px) {
+    #gameContainer {
+        max-height: calc(100vh - 80px);
+        padding: 5px;
+    }
+    #ui {
+        padding: 5px 10px;
+    }
+    #score {
+        font-size: 20px;
+        margin-bottom: 5px;
+    }
+}
+
+#gameCanvas {
+    border: 4px solid #333;
+    border-radius: 8px;
+    background: #f0f0f0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+/* Joystick Styles - positioned outside canvas using fixed positioning */
+.joystick {
+    position: fixed;
+    width: 120px;
+    height: 120px;
+    top: 50%;
+    transform: translateY(-50%);
+    touch-action: none;
+    z-index: 100;
+}
+
+#joystickLeft {
+    left: 10px;
+}
+
+#joystickRight {
+    right: 10px;
+}
+
+.joystick-base {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 3px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.joystick-stick {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.8);
+    border: 2px solid rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    transition: transform 0.1s ease-out;
+    pointer-events: none;
+}
+
+.joystick.active .joystick-base {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.7);
+}
+
+.joystick.active .joystick-stick {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Hide joysticks on desktop by default, show on touch devices */
+@media (hover: hover) and (pointer: fine) {
+    .joystick {
+        display: none;
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .joystick {
+        display: block;
+    }
+}
+
+#ui {
+    padding: 10px 20px;
+    text-align: center;
+    color: white;
+    font-size: 24px;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    flex-shrink: 0;
+}
+#score {
+    font-size: 32px;
+    margin-bottom: 10px;
+}
+#status {
+    font-size: 20px;
+    margin-top: 10px;
+}
+
+/* Start Button - visible on mobile, hidden on desktop */
+.start-button {
+    display: block; /* Show by default on mobile */
+    margin: 15px auto;
+    padding: 15px 40px;
+    font-size: 24px;
+    font-weight: bold;
+    color: white;
+    background: rgba(255, 255, 255, 0.2);
+    border: 3px solid rgba(255, 255, 255, 0.8);
+    border-radius: 12px;
+    cursor: pointer;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    transition: all 0.2s ease;
+    touch-action: manipulation;
+    pointer-events: auto;
+    z-index: 100;
+}
+
+.start-button:active {
+    transform: scale(0.95);
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.start-button.hidden {
+    display: none !important;
+}
+
+/* Hide button on desktop (hover-capable devices with fine pointer) */
+/* But only if it's not explicitly shown via JavaScript */
+@media (hover: hover) and (pointer: fine) {
+    .start-button:not(.hidden) {
+        display: none;
+    }
+}
+
+/* Ensure button shows on mobile devices (touch or small screens) */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+    .start-button:not(.hidden) {
+        display: block !important;
+    }
+}
+
+/* Hide status text on mobile */
+@media (hover: none) and (pointer: coarse), (max-width: 768px) {
+    #status {
+        display: none;
+    }
+}
+
+/* Responsive font sizes and joystick sizing */
+@media (max-width: 768px) {
+    #score {
+        font-size: 24px;
+    }
+    .start-button {
+        font-size: 20px;
+        padding: 12px 30px;
+    }
+    .joystick {
+        width: 100px;
+        height: 100px;
+    }
+    .joystick-stick {
+        width: 50px;
+        height: 50px;
+    }
+}
+
+/* Smaller joysticks on very small screens */
+@media (max-width: 480px) {
+    .joystick {
+        width: 80px;
+        height: 80px;
+    }
+    .joystick-stick {
+        width: 40px;
+        height: 40px;
+    }
+    #joystickLeft {
+        left: 5px;
+    }
+    #joystickRight {
+        right: 5px;
+    }
+}
+
