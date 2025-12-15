@@ -37,20 +37,9 @@ body {
   gap: 12px;
 }
 
-.hud-score-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
 .hud-score {
   font-weight: 700;
   font-size: 20px;
-}
-
-.hud-level {
-  font-size: 14px;
-  color: #6179a6;
 }
 
 .hud-status {

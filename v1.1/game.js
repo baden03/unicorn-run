@@ -1,20 +1,14 @@
 (() => {
   // Unicorn Run - core implementation with debug toggles
 
-  // Debug toggles (set true to log to console / draw helpers)
+  // Debug toggles (set true to log to console)
   const DEBUG_PLAYER = false;
   const DEBUG_UNICORN = false;
-  const DEBUG_PORTALS = false;
-  const DEBUG_BRIDGES = false;
-  const DEBUG_SWITCHES = false;
-  // When set to a number (0-based), start directly on that level for testing
-  const DEBUG_START_LEVEL = null; // e.g. 2 to start on level 3, null for default
 
   // DOM
   const canvas = document.getElementById("gameCanvas");
   const ctx = canvas.getContext("2d");
   const scoreEl = document.getElementById("score");
-  const levelEl = document.getElementById("level");
   const statusEl = document.getElementById("status");
   const startButton = document.getElementById("startButton");
   const joystickLeft = document.getElementById("joystickLeft");
@@ -43,8 +37,8 @@
     WIN: "win",
   };
 
-  // Maze templates: 0 floor, 1 wall, 5 portal; 6 bridge, 7 switch (v1.2)
-  const MAZE_CLASSIC = [
+  // Maze: 0 floor, 1 wall, 5 portal
+  const maze = [
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
     [1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
     [1,0,1,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,1,0,1],
@@ -62,133 +56,6 @@
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   ];
 
-  // Variant 1: slightly more open center corridors
-  const MAZE_CLASSIC_ALT_1 = MAZE_CLASSIC.map((row, r) =>
-    row.map((tile, c) => {
-      if (tile !== 1) return tile;
-      // Carve a small plus-shaped open area near the middle
-      if (
-        (r === 6 && c >= 8 && c <= 12) ||
-        (c === 10 && r >= 4 && r <= 10)
-      ) {
-        return 0;
-      }
-      return tile;
-    })
-  );
-
-  // Variant 2: add a second loop in the lower half
-  const MAZE_CLASSIC_ALT_2 = MAZE_CLASSIC.map((row, r) =>
-    row.map((tile, c) => {
-      if (tile !== 1) return tile;
-      if (
-        r >= 9 && r <= 11 &&
-        c >= 4 && c <= 16
-      ) {
-        return 0;
-      }
-      return tile;
-    })
-  );
-
-  // Bridges level: derive from classic and add a single 4-way bridge with side portals
-  const MAZE_BRIDGES = (() => {
-    const base = MAZE_CLASSIC.map((row) => row.slice());
-
-    // Find 4-way intersections: floor with floor in all four directions
-    const fourWays = [];
-    for (let r = 1; r < ROWS - 1; r++) {
-      for (let c = 1; c < COLS - 1; c++) {
-        if (base[r][c] !== 0) continue;
-        const up = base[r - 1][c];
-        const down = base[r + 1][c];
-        const left = base[r][c - 1];
-        const right = base[r][c + 1];
-        if (up === 0 && down === 0 && left === 0 && right === 0) {
-          fourWays.push({ row: r, col: c });
-        }
-      }
-    }
-
-    // Pick the first 4-way we find for the bridge
-    const bridge = fourWays[0];
-    if (bridge) {
-      const { row, col } = bridge;
-      // Bridge tile itself
-      base[row][col] = 6;
-      // Block the horizontal surface path with portals that tunnel under the bridge
-      base[row][col - 1] = 5;
-      base[row][col + 1] = 5;
-      // Vertical neighbors remain floor (straight crossing over the bridge)
-    }
-
-    return base;
-  })();
-
-  // Switches level: derive from classic and place switches only at 4-way intersections (tile 7)
-  const MAZE_SWITCHES = (() => {
-    const base = MAZE_CLASSIC.map((row) => row.slice());
-
-    const fourWays = [];
-    for (let r = 1; r < ROWS - 1; r++) {
-      for (let c = 1; c < COLS - 1; c++) {
-        if (base[r][c] !== 0) continue;
-        const up = base[r - 1][c];
-        const down = base[r + 1][c];
-        const left = base[r][c - 1];
-        const right = base[r][c + 1];
-        if (up === 0 && down === 0 && left === 0 && right === 0) {
-          fourWays.push({ row: r, col: c });
-        }
-      }
-    }
-
-    // Choose up to three 4-way intersections to host switches
-    for (let i = 0; i < fourWays.length && i < 3; i++) {
-      const { row, col } = fourWays[i];
-      base[row][col] = 7;
-    }
-
-    return base;
-  })();
-
-  // Combined level: start from bridges layout and add switches at remaining 4-way intersections
-  const MAZE_BRIDGES_SWITCHES = (() => {
-    const base = MAZE_BRIDGES.map((row) => row.slice());
-    const fourWays = [];
-    for (let r = 1; r < ROWS - 1; r++) {
-      for (let c = 1; c < COLS - 1; c++) {
-        if (base[r][c] !== 0) continue;
-        const up = base[r - 1][c];
-        const down = base[r + 1][c];
-        const left = base[r][c - 1];
-        const right = base[r][c + 1];
-        if (up === 0 && down === 0 && left === 0 && right === 0) {
-          fourWays.push({ row: r, col: c });
-        }
-      }
-    }
-    for (let i = 0; i < fourWays.length && i < 2; i++) {
-      const { row, col } = fourWays[i];
-      base[row][col] = 7;
-    }
-    return base;
-  })();
-
-  const levels = [
-    { id: 1, name: "Classic",          type: "classic",          rows: ROWS, cols: COLS, portals: true },
-    { id: 2, name: "Bridges",          type: "bridges",          rows: ROWS, cols: COLS, portals: true },
-    { id: 3, name: "Switches",         type: "switches",         rows: ROWS, cols: COLS, portals: true },
-    { id: 4, name: "Bridges+Switches", type: "bridges_switches", rows: ROWS, cols: COLS, portals: true },
-  ];
-
-  let currentLevelIndex = 0;
-
-  // Active maze + per-level metadata
-  let maze = MAZE_CLASSIC.map((row) => row.slice());
-  let portals = [];
-  let switches = [];
-
   // State
   let gameState = STATE.TITLE;
   let score = 0;
@@ -201,14 +68,6 @@
   let floatTexts = [];
   let unicornRespawnPause = 0;
   let gemsCollected = 0;
-
-  // Level intro overlay
-  let levelIntroTimer = 0;
-  let levelIntroText = "";
-
-  // Track player tile for switch entry detection
-  let lastPlayerTileRow = null;
-  let lastPlayerTileCol = null;
 
   let player = {};
   let unicorn = {};
@@ -233,143 +92,9 @@
     a.y - a.h / 2 < b.y + b.h / 2 &&
     a.y + a.h / 2 > b.y - b.h / 2;
 
-  // --- Maze factory (v1.2) ---
-
-  function pickTemplateForLevel(level) {
-    // Allow multiple templates per type and pick one at random
-    const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-    switch (level.type) {
-      case "bridges":
-        return MAZE_BRIDGES;
-      case "switches":
-        return MAZE_SWITCHES;
-      case "bridges_switches":
-        return MAZE_BRIDGES_SWITCHES;
-      case "classic":
-      default:
-        return pickRandom([MAZE_CLASSIC, MAZE_CLASSIC_ALT_1, MAZE_CLASSIC_ALT_2]);
-    }
-  }
-
-  function buildPortalsFromMaze(sourceMaze) {
-    const portalTiles = [];
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        if (sourceMaze[r][c] === 5) {
-          portalTiles.push({ row: r, col: c });
-        }
-      }
-    }
-    const pairs = [];
-    for (let i = 0; i + 1 < portalTiles.length; i += 2) {
-      pairs.push({ a: portalTiles[i], b: portalTiles[i + 1] });
-    }
-    return pairs;
-  }
-
-  function buildSwitchesFromMaze(sourceMaze) {
-    const result = [];
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        if (sourceMaze[r][c] === 7) {
-          // Alternate initial mode for a bit of variety
-          const mode = (result.length % 2 === 0) ? "vertical" : "horizontal";
-          result.push({ row: r, col: c, mode, pending: false, timer: 0 });
-        }
-      }
-    }
-    return result;
-  }
-
-  function createMazeForLevel(levelConfig) {
-    const template = pickTemplateForLevel(levelConfig);
-    const newMaze = template.map((row) => row.slice());
-    const newPortals = buildPortalsFromMaze(newMaze);
-    const newSwitches = buildSwitchesFromMaze(newMaze);
-
-    // Spawn positions expressed in grid coordinates
-    const spawns = {
-      player: { row: 1, col: 1 },
-      unicorn: { row: 13, col: 19 },
-    };
-
-    return { maze: newMaze, portals: newPortals, switches: newSwitches, spawns };
-  }
-
-  function seedDotsFromMaze(sourceMaze, levelConfig, spawns) {
-    dots.clear();
-    const playerSpawn = spawns?.player;
-    const unicornSpawn = spawns?.unicorn;
-
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const tile = sourceMaze[r][c];
-        // Basic rule: dots on floor/bridge/switch, but not on portals
-        const walkableForDots = tile === 0 || tile === 6 || tile === 7;
-        if (!walkableForDots) continue;
-        // Avoid spawning on player/unicorn start tiles
-        if (playerSpawn && playerSpawn.row === r && playerSpawn.col === c) continue;
-        if (unicornSpawn && unicornSpawn.row === r && unicornSpawn.col === c) continue;
-        dots.add(`${r},${c}`);
-      }
-    }
-  }
-
-  function getSwitchAt(row, col) {
-    return switches.find((s) => s.row === row && s.col === col) || null;
-  }
-
-  function showLevelIntro() {
-    const level = levels[currentLevelIndex];
-    levelIntroText = `Level ${currentLevelIndex + 1}: ${level.name}`;
-    levelIntroTimer = 1.5;
-  }
-
-  function loadLevel(index, options = {}) {
-    const { resetScore = false, showIntro = true } = options;
-    currentLevelIndex = index;
-    const level = levels[currentLevelIndex];
-    const { maze: newMaze, portals: newPortals, switches: newSwitches, spawns } =
-      createMazeForLevel(level);
-    maze = newMaze;
-    portals = newPortals;
-    switches = newSwitches;
-    resetEntities(spawns);
-    seedDotsFromMaze(maze, level, spawns);
-    gemCooldown = 0;
-    placeGem();
-    if (resetScore) score = 0;
-    if (showIntro) showLevelIntro();
-    gameState = STATE.PLAYING_NORMAL;
-    updateUI();
-  }
-
-  function resetEntities(spawns) {
-    const playerSpawn = spawns?.player || { row: 1, col: 1 };
-    const unicornSpawn = spawns?.unicorn || { row: 13, col: 19 };
-    const playerPos = gridToPixel(playerSpawn.col, playerSpawn.row);
-    const unicornPos = gridToPixel(unicornSpawn.col, unicornSpawn.row);
-
-    player = {
-      x: playerPos.x,
-      y: playerPos.y,
-      w: 20,
-      h: 20,
-      dirX: 0,
-      dirY: 0,
-      desiredX: 0,
-      desiredY: 0,
-      speed: PLAYER_SPEED,
-    };
-    unicorn = {
-      x: unicornPos.x,
-      y: unicornPos.y,
-      w: 24,
-      h: 24,
-      dirX: -1,
-      dirY: 0,
-      speed: UNICORN_SPEED,
-    };
+  function resetEntities() {
+    player = { x: TILE * 1.5, y: TILE * 1.5, w: 20, h: 20, dirX: 0, dirY: 0, desiredX: 0, desiredY: 0, speed: PLAYER_SPEED };
+    unicorn = { x: TILE * 19.5, y: TILE * 13.5, w: 24, h: 24, dirX: -1, dirY: 0, speed: UNICORN_SPEED };
     invincibleTimer = 0;
     randomStepsLeft = 0;
     unicornTrail = [];
@@ -381,9 +106,12 @@
   }
 
   function seedDots() {
-    // Backwards-compatible wrapper: use current maze and default spawns
-    const spawns = { player: { row: 1, col: 1 }, unicorn: { row: 13, col: 19 } };
-    seedDotsFromMaze(maze, levels[currentLevelIndex], spawns);
+    dots.clear();
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (maze[r][c] === 0) dots.add(`${r},${c}`);
+      }
+    }
   }
 
   function placeGem() {
@@ -406,9 +134,6 @@
       [STATE.WIN]: "You win! Press Space or Start",
     };
     statusEl.textContent = stateText[gameState];
-    if (levelEl) {
-      levelEl.textContent = `Level: ${currentLevelIndex + 1} / ${levels.length}`;
-    }
     if (startButton) {
       startButton.textContent = gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE ? "Restart" : "Start";
     }
@@ -496,59 +221,12 @@
   function applyPortal(entity) {
     const { row, col } = pixelToGrid(entity.x, entity.y);
     if (!isPortal(row, col)) return;
-
-    // Edge portals (side wrap) keep their classic behavior:
-    // move to the opposite side corridor, not onto another portal tile.
-    if (col === 0 || col === COLS - 1) {
-      const targetCol = col === 0 ? COLS - 2 : 1;
-      const pos = gridToPixel(targetCol, row);
-      entity.x = pos.x;
-      entity.y = pos.y;
-      if (DEBUG_PORTALS) {
-        console.log("Side portal wrap", { from: { row, col }, to: { row, col: targetCol } });
-      }
-      return;
-    }
-
-    // Internal portals (e.g. bridge tunnels) use the maze-factory portal pairs
-    const pair = portals.find(
-      (p) =>
-        (p.a.row === row && p.a.col === col) ||
-        (p.b.row === row && p.b.col === col)
-    );
-    if (!pair) return;
-
-    // Special handling for bridge portals:
-    // if the pair is symmetric around a bridge (same row, cols differ by 2),
-    // tunnel *through* the bridge: from one portal, skip the bridge and opposite
-    // portal and land on the next free tile on the far side.
-    if (pair.a.row === pair.b.row && Math.abs(pair.a.col - pair.b.col) === 2) {
-      const bridgeRow = pair.a.row;
-      const bridgeCol = (pair.a.col + pair.b.col) / 2;
-
-      // Determine which side we're entering from and move two tiles past the bridge center
-      const dir = Math.sign(bridgeCol - col); // from left (+1) or right (-1)
-      const targetCol = bridgeCol + dir * 2;
-      const pos = gridToPixel(targetCol, bridgeRow);
-      entity.x = pos.x;
-      entity.y = pos.y;
-      if (DEBUG_PORTALS) {
-        console.log("Bridge portal -> far side tile", {
-          from: { row, col },
-          bridge: { row: bridgeRow, col: bridgeCol },
-          to: { row: bridgeRow, col: targetCol },
-        });
-      }
-      return;
-    }
-
-    // Generic paired portals: teleport to the other portal tile
-    const target = (pair.a.row === row && pair.a.col === col) ? pair.b : pair.a;
-    const pos = gridToPixel(target.col, target.row);
-    entity.x = pos.x;
-    entity.y = pos.y;
-    if (DEBUG_PORTALS) {
-      console.log("Paired portal", { from: { row, col }, to: target });
+    if (col <= 0) {
+      const target = gridToPixel(COLS - 2, row);
+      entity.x = target.x;
+    } else if (col >= COLS - 1) {
+      const target = gridToPixel(1, row);
+      entity.x = target.x;
     }
   }
 
@@ -602,89 +280,14 @@
     }
 
     // Move using current direction (persists without holding keys)
-    let moveX = player.dirX * player.speed * dt;
-    let moveY = player.dirY * player.speed * dt;
-
-    // Tile-based special rules
-    const currentTile = pixelToGrid(player.x, player.y);
-    const currentTileCode = tileAt(currentTile.row, currentTile.col);
-
-    // Bridges: act like a straight cross-over piece.
-    // For v1.2, allow only vertical movement while on a bridge tile.
-    if (currentTileCode === 6 && moveX !== 0) {
-      moveX = 0;
-      player.dirX = 0;
-    }
-
-    // Switch tiles: restrict exits based on mode when standing on a switch
-    if (currentTileCode === 7) {
-      const sw = getSwitchAt(currentTile.row, currentTile.col);
-      if (sw) {
-        if (sw.mode === "vertical" && moveX !== 0) {
-          moveX = 0;
-          player.dirX = 0;
-        } else if (sw.mode === "horizontal" && moveY !== 0) {
-          moveY = 0;
-          player.dirY = 0;
-        }
-      }
-    }
-
-    // Approaching switches from outside: treat blocked sides like walls
-    const targetTile = pixelToGrid(player.x + moveX, player.y + moveY);
-    const targetCode = tileAt(targetTile.row, targetTile.col);
-    if (targetCode === 7) {
-      const sw = getSwitchAt(targetTile.row, targetTile.col);
-      if (sw) {
-        if (sw.mode === "vertical" && moveX !== 0) {
-          moveX = 0;
-          player.dirX = 0;
-        } else if (sw.mode === "horizontal" && moveY !== 0) {
-          moveY = 0;
-          player.dirY = 0;
-        }
-      }
-    }
+    const moveX = player.dirX * player.speed * dt;
+    const moveY = player.dirY * player.speed * dt;
     if (!blocked(player.x + moveX, player.y, player.w, player.h)) player.x += moveX;
     if (!blocked(player.x, player.y + moveY, player.w, player.h)) player.y += moveY;
 
     // Stop on collision but keep desired for next intersection
     if (blocked(player.x + moveX, player.y, player.w, player.h)) player.dirX = 0;
     if (blocked(player.x, player.y + moveY, player.w, player.h)) player.dirY = 0;
-
-    // Switch entry detection: when entering a new switch tile,
-    // arm a delayed toggle rather than switching immediately.
-    if (
-      currentTile.row !== lastPlayerTileRow ||
-      currentTile.col !== lastPlayerTileCol
-    ) {
-      const newCode = currentTileCode;
-      if (newCode === 7) {
-        const sw = getSwitchAt(currentTile.row, currentTile.col);
-        if (sw) {
-          if (!sw.pending) {
-            sw.pending = true;
-            sw.timer = 2; // seconds
-            if (DEBUG_SWITCHES) {
-              console.log("Switch armed", {
-                row: currentTile.row,
-                col: currentTile.col,
-                currentMode: sw.mode,
-                delay: sw.timer,
-              });
-            }
-          }
-          if (DEBUG_SWITCHES) {
-            console.log("Switch crossed", {
-              row: currentTile.row,
-              col: currentTile.col,
-            });
-          }
-        }
-      }
-      lastPlayerTileRow = currentTile.row;
-      lastPlayerTileCol = currentTile.col;
-    }
 
     applyPortal(player);
 
@@ -854,24 +457,6 @@
       .filter(p => p.life > 0);
   }
 
-  function updateSwitches(dt) {
-    for (const sw of switches) {
-      if (!sw.pending) continue;
-      sw.timer -= dt;
-      if (sw.timer <= 0) {
-        sw.pending = false;
-        sw.mode = sw.mode === "vertical" ? "horizontal" : "vertical";
-        if (DEBUG_SWITCHES) {
-          console.log("Switch toggled (timer)", {
-            row: sw.row,
-            col: sw.col,
-            mode: sw.mode,
-          });
-        }
-      }
-    }
-  }
-
   function updateFloatTexts(dt) {
     floatTexts = floatTexts
       .map(t => ({
@@ -891,13 +476,8 @@
       score += 1;
       updateUI();
       if (dots.size === 0) {
-        // Level complete: advance to next or win
-        if (currentLevelIndex < levels.length - 1) {
-          loadLevel(currentLevelIndex + 1, { resetScore: false, showIntro: true });
-        } else {
-          gameState = STATE.WIN;
-          updateUI();
-        }
+        gameState = STATE.WIN;
+        updateUI();
       }
     }
   }
@@ -928,11 +508,13 @@
 
   // State management
   function startGame() {
-    const hasDebugLevel = typeof DEBUG_START_LEVEL === "number";
-    const clamped = hasDebugLevel
-      ? Math.max(0, Math.min(levels.length - 1, DEBUG_START_LEVEL))
-      : 0;
-    loadLevel(clamped, { resetScore: true, showIntro: true });
+    score = 0;
+    gemCooldown = 0;
+    resetEntities();
+    seedDots();
+    placeGem();
+    gameState = STATE.PLAYING_NORMAL;
+    updateUI();
   }
 
   // Rendering
@@ -948,117 +530,8 @@
         } else if (t === 5) {
           ctx.fillStyle = "#d4ddff";
           ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
-        } else if (t === 6) {
-          // Bridge: base tile
-          const x = c * TILE;
-          const y = r * TILE;
-          ctx.fillStyle = "#eef2ff";
-          ctx.fillRect(x, y, TILE, TILE);
-
-          // Draw borders only on sides that are not a free path (i.e., not floor/bridge/switch)
-          ctx.strokeStyle = "#a3b0ff";
-          ctx.lineWidth = 3;
-          const pathLike = (tr, tc) => {
-            const code = tileAt(tr, tc);
-            return code === 0 || code === 6 || code === 7;
-          };
-
-          ctx.beginPath();
-          // Top edge
-          if (!pathLike(r - 1, c)) {
-            ctx.moveTo(x, y + 1.5);
-            ctx.lineTo(x + TILE, y + 1.5);
-          }
-          // Bottom edge
-          if (!pathLike(r + 1, c)) {
-            ctx.moveTo(x, y + TILE - 1.5);
-            ctx.lineTo(x + TILE, y + TILE - 1.5);
-          }
-          // Left edge
-          if (!pathLike(r, c - 1)) {
-            ctx.moveTo(x + 1.5, y);
-            ctx.lineTo(x + 1.5, y + TILE);
-          }
-          // Right edge
-          if (!pathLike(r, c + 1)) {
-            ctx.moveTo(x + TILE - 1.5, y);
-            ctx.lineTo(x + TILE - 1.5, y + TILE);
-          }
-          ctx.stroke();
-        } else if (t === 7) {
-          // Switch tile: visually similar to bridge, but walls depend on mode
-          const x = c * TILE;
-          const y = r * TILE;
-          const sw = getSwitchAt(r, c);
-
-          ctx.fillStyle = "#e8f7ff";
-          ctx.fillRect(x, y, TILE, TILE);
-
-          // Draw walls like a bridge, but orientation follows switch mode
-          ctx.strokeStyle = "#4098ff";
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          if (sw?.mode === "vertical") {
-            // Walls on left/right
-            ctx.moveTo(x + 1.5, y);
-            ctx.lineTo(x + 1.5, y + TILE);
-            ctx.moveTo(x + TILE - 1.5, y);
-            ctx.lineTo(x + TILE - 1.5, y + TILE);
-          } else if (sw?.mode === "horizontal") {
-            // Walls on top/bottom
-            ctx.moveTo(x, y + 1.5);
-            ctx.lineTo(x + TILE, y + 1.5);
-            ctx.moveTo(x, y + TILE - 1.5);
-            ctx.lineTo(x + TILE, y + TILE - 1.5);
-          }
-          ctx.stroke();
-
-          // Small center marker (for debugging orientation)
-          if (DEBUG_SWITCHES) {
-            ctx.save();
-            ctx.translate(x + TILE / 2, y + TILE / 2);
-            ctx.fillStyle = "#ff7a90";
-            ctx.beginPath();
-            ctx.arc(0, 0, 3, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-          }
         }
       }
-    }
-
-    // Optional debug overlays for portals / bridges
-    if (DEBUG_PORTALS) {
-      ctx.save();
-      ctx.fillStyle = "rgba(255,0,200,0.6)";
-      portals.forEach((p, idx) => {
-        const aPos = gridToPixel(p.a.col, p.a.row);
-        const bPos = gridToPixel(p.b.col, p.b.row);
-        ctx.beginPath();
-        ctx.arc(aPos.x, aPos.y, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(bPos.x, bPos.y, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.font = "10px Arial";
-        ctx.fillText(String(idx), aPos.x + 6, aPos.y - 6);
-        ctx.fillText(String(idx), bPos.x + 6, bPos.y - 6);
-      });
-      ctx.restore();
-    }
-
-    if (DEBUG_BRIDGES) {
-      ctx.save();
-      ctx.strokeStyle = "rgba(0,200,255,0.9)";
-      ctx.lineWidth = 2;
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          if (maze[r][c] === 6) {
-            ctx.strokeRect(c * TILE + 4, r * TILE + 4, TILE - 8, TILE - 8);
-          }
-        }
-      }
-      ctx.restore();
     }
   }
 
@@ -1215,13 +688,9 @@
     drawPlayer();
     drawUnicorn();
 
-    if (levelIntroTimer > 0) {
-      drawOverlay(levelIntroText, "#7c89ff");
-    } else {
-      if (gameState === STATE.TITLE) drawOverlay("Unicorn Run", "#ffd166");
-      if (gameState === STATE.GAMEOVER) drawOverlay("Game Over", "#ff4d6d");
-      if (gameState === STATE.WIN) drawOverlay("You Win!", "#36cfc9");
-    }
+    if (gameState === STATE.TITLE) drawOverlay("Unicorn Run", "#ffd166");
+    if (gameState === STATE.GAMEOVER) drawOverlay("Game Over", "#ff4d6d");
+    if (gameState === STATE.WIN) drawOverlay("You Win!", "#36cfc9");
   }
 
   // Loop
@@ -1230,20 +699,12 @@
     const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
     lastTime = timestamp;
 
-    if (levelIntroTimer > 0) {
-      levelIntroTimer -= dt;
-      if (levelIntroTimer < 0) levelIntroTimer = 0;
-    }
-
-    const playing = gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE;
-
-    if (playing && levelIntroTimer <= 0) {
+    if (gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE) {
       updatePlayer(dt);
       updateUnicorn(dt);
       updateTrail(dt);
       updateStars(dt);
       updateFloatTexts(dt);
-      updateSwitches(dt);
       updateDots();
       updateGem(dt);
       if (invincibleTimer > 0) {

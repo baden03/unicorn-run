@@ -1,201 +1,211 @@
-# Unicorn Run
-*Build a fast, cute, top-down maze game in HTML Canvas where the player collects gems while an angry unicorn chases them.*
-**Version:** 1.1  
-**Author:** Baden + Uviwe (8-years old) the one who begged to make a roblox game and she wanted to play it.
+## Unicorn Run v1.2 — Maze Factory & Multi‑Level Mazes
+*Extend Unicorn Run from a single static maze into a level‑based game powered by a reusable maze factory, enabling multiple maze layouts, new tile types, and scalable difficulty.*
 
-Current game can be played at:
-https://twinpictures.de/unicorn-run/
-
-Play v1 of the borning non-roblox game found under:
-https://twinpictures.de/unicorn-run/v1/
+**Version:** 1.2  
+**Author:** Baden + Uviwe (8 years old)
 
 ---
 
 ## 1. Goals
-### 1.1 Primary Goal
-Create a first-success game that is:
-- Fun within the first hour of building
-- Easy to understand and extend
-- Built with HTML, CSS, and JavaScript
 
-### 1.2 Design Goals
-- Simple rules, immediate feedback (score goes up, gem respawns)
-- Predictable physics and collisions using a tile-based maze (grid)
-- Clean separation between game state, rendering, and input
-- A clear roadmap for add-on projects (lives, power-ups, two player, smarter AI)
-- Runs seamlessly on Desktop and Mobile devices
+### 1.1 Primary Goal for v1.2
+- **Evolve Unicorn Run** from a single‑maze v1.1 prototype into a **multi‑level** game.
+- Keep the **core feel and controls** of v1.1, while making it easy to add new mazes and mechanics.
+- Make the codebase friendlier for future add‑ons by isolating maze logic behind a **maze factory**.
 
----
+### 1.2 Design Goals (Building on v1.1)
+- **Simple rules, immediate feedback**  
+  Players still eat dots, chase gems, and dodge the angry unicorn.
+- **Tile‑based collisions**  
+  Movement stays grid‑validated (same as v1.1), now across multiple mazes.
+- **Clean separation of concerns**  
+  Game loop, input, and entities stay mostly unchanged; v1.2 focuses on maze/level loading.
+- **Extendable foundation**  
+  The maze factory should make it trivial to add new level templates, tile types, and AI improvements later.
 
-## 2. Game Summary
-Unicorn Run is a top-down, Pac-Man-clone chase game:
-- The player navigates a maze eating dots.
-- Each dot increases score.
-- When all dots are gone, the next maze is loaded.
-- An angry unicorn chases the player.
-- Getting caught ends the game in the MVP (later becomes “lose a heart and respawn”).
-- A gem is randomly spawned on the maze.
-- Eating a gem makes the player invincible to the unicorn for a number of seconds.
+For the original v1.1 design goals and mechanics, see the `v1.1/README.md`.
 
 ---
 
-## 3. Core Mechanics
-### 3.1 Maze (Tile Grid)
-Use a grid-based maze to simplify collisions and movement logic.
-- Maze is a 2D array: maze[row][col]
-- Tile types:
-  - 0 = floor (walkable)
-  - 1 = wall (blocked)
-  - 2 = corner
-  - 3 = 3-way t intersection
-  - 4 = 4-way x intersection
-  - 5 = side portal wrap-around
+## 2. Game Summary (v1.2)
 
-Recommended tile size for Canvas:
-- TILE = 32 px (good visibility and easy math)
+Unicorn Run remains a **top‑down chase game** (Pac‑Man‑style):
+- **Player** moves through a maze, eating dots to gain score.
+- **Unicorn** chases the player using simple chase logic.
+- **Gems** still spawn and give temporary invincibility.
+- **Getting caught** when not invincible still ends the run (or the current life, in future versions).
 
-Example maze dimensions:
-- 15 rows x 21 cols (small enough for a first project)
-
-### 3.2 Movement
-Movement is grid-validated but can be rendered smoothly.
-- Player and unicorn have positions in pixels (x, y)
-- They also have implied grid positions (row, col) derived from pixels:
-  - col = floor(x / TILE)
-  - row = floor(y / TILE)
-
-Movement approach (simple and reliable):
-- Use velocity based on key input (dx, dy)
-- Each frame, propose new position
-- Convert proposed position to tile index
-- If the target tile is a wall, block movement along that axis
-- if the target tile is a corner, block movement along walled access
-- if the target title is a 3-way, block movement along one axis
-- if the target tile is a 4-way, allow 4 axis movement
-- if th etarget tile is a portal, wrap the user to the other side of the maze.
-
-This allows smooth motion while preserving simple collision rules.
-
-### 3.3 Dots
-Dots appear on all un travled floor titles.
-- When collected:
-  - score += 1
-
-Dot collection:
-- If player rectangle overlaps dot rectangle (or distance threshold), dot is collected
-
-### 3.4 Gems
-Gems appear on random floor tiles.
-- Only spawn on floor tiles
-- Do not spawn on player or unicorn tile
-- When collected:
-  - n seconds of invincibility, denoted by the unicorn cycling colors of the rainbow.
-  - after the invincibility time, the unicorn returns to pink.
-  - after a short time peirod respawn a new gem
-
-Gem collection:
-- If player rectangle overlaps gem rectangle (or distance threshold), gem is collected
-
-### 3.4 Unicorn Chase (MVP AI)
-Start with a simple chase so it is easy to build and debug.
-- The unicorn moves at a constant speed
-- At each intersection and corner, it chooses a 'greedy' direction that reduces distance to player:
-  - Compare horizontal vs vertical distance
-  - Try moving in the dominant direction first
-  - If blocked by wall, try another free axis
-  - If the selected free axis puts the unicorn in a reverse direction:
-    - Switch to 'random' rules where the unicorn makes random axis selections on the next two intersections
-    - return to 'greedy' rules
-
-This “greedy + random chase” is not perfect pathfinding, but feels like a chase and is easy to understand.
-
-### 3.5 Win/Lose Conditions (MVP)
-MVP Lose:
-- If unicorn collides with player when not not in invincible (rainbow unicorn mode): Game Over
-
-MVP Win (optional):
-- Collect all dots. Later multiple maze levels can be added
+New in v1.2:
+- The run is now a **sequence of levels**, each with its own maze layout.
+- A **maze factory** chooses and initializes the maze for each level.
+- The maze vocabulary is extended with **bridges** and **switch tiles**, alongside existing **portals**.
 
 ---
 
-## 4. Visual Style (Cute, Clear, Minimal)
-Canvas rendering should be simple shapes first, then upgraded to sprites later.
+## 3. Scope for v1.2
 
-### 4.1 Rendering Palette (Conceptual)
-- Walls: solid blocks
-- Floor: light background
-- Player: circle
-- Unicorn: pink rounded rectangle + small triangle “horn”
-- Dots: 1/3 size of player
-- Gems: diamond shape or circle with sparkle strokes
+### 3.1 In Scope
+- **Level system**
+  - List of level configs (id, name, type, size, flags).
+  - `currentLevelIndex` and `loadLevel(index)` to move between levels.
+- **Maze factory inside `game.js`**
+  - Select a **template maze** based on level config.
+  - Initialize **portals**, **switch tiles**, and **spawn positions**.
+  - Seed **dots** based on traversable tiles.
+- **Extended tile types (high‑level)**
+  - Portals/tunnels (wrap‑around) using an existing tile code.
+  - Bridges (visual over/under feel, but simple floor behavior).
+  - Switch tiles that constrain movement directions at certain intersections.
+- **HUD updates**
+  - Display **current level** and optional level name.
+  - Simple “Level X” / “You Win” / “Game Over” messages.
 
-### 4.2 UI Overlay
-Draw HUD at top or above canvas:
-- Score: 0+
-- State: “Press Space or Button to Start”, “Game Over”, “You Win”
-- A joysticks placed to the right of maze for mobile devices in landscape roatation and at the bottom of the maze in portrate orientation.
-- Canvas is resized to fit mobile screen viewport
+### 3.2 Out of Scope (Deferred)
+- Procedural maze generation (v1.2 uses **hand‑crafted templates**).
+- Advanced unicorn pathfinding using maze topology.
+- New entity types (extra enemies, NPCs), power‑ups, lives/health bar, two‑player mode.
+- Persistent high score tracking.
 
-Use DOM for text UI if preferred (simpler), or draw text on canvas.
-
----
-
-## 5. Controls
-MVP controls:
-- Arrow keys OR WASD OR Joystick on mobile devices
-- Space and Start Button:
-  - Start from title screen
-  - Restart from game over
+Details for data structures, helper functions, and collision rules live in `dev_notes.md` (to be added/expanded as implementation stabilizes).
 
 ---
 
-## 6. Technical Architecture
-### 6.1 Files
-Start with seperation of file types:
-- index.html
-- styles.css
-- game.js
+## 4. Maze & Tile Model (High‑Level)
 
-### 6.2 Game State
-Recommended state variables:
-- gameState: "title" | "playing_normal" | "playing_invincible" | "gameover" | "win"
-- score: number
-- maze: number[][]
-- tileSize: number
+The maze is still a **2D integer grid**: `maze[row][col]`.
 
-Entities:
-- player: { x, y, w, h, speed, dirX, dirY }
-- unicorn: { x, y, w, h, speed }
-- dots: number[][]
-- gem: { x, y, w, h }
-- invincible_time: number
-- recovery_time: number
+### 4.1 Core Tile Types
+- **0 – Floor**: walkable.
+- **1 – Wall**: blocks movement.
+- **5 – Portal / Tunnel**: walkable tile that teleports the player/unicorn to a paired location.
+- **6 – Bridge floor**: walkable tile, drawn as an elevated path (visual variety only in v1.2).
+- **7 – Switch tile**: walkable intersection tile with **direction‑gated exits**.
 
-Input:
-- keysDown: Set or object map (ArrowUp, ArrowDown, etc.)
-- Start Button
-- Joystick
+In general:
+- **Walkable tiles**: `{ 0, 5, 6, 7 }`
+- **Blocked tiles**: `{ 1 }`
 
-### 6.3 Game Loop
-Use requestAnimationFrame for smooth rendering:
-- update(deltaTime)
-- draw()
+### 4.2 Portals and “Tunnels”
+- Portals and tunnels **share the same tile code** (5).
+- Differences in behavior (e.g., side wrap‑around vs. under‑bridge tunnel) are handled in logic, not with a separate tile code.
+- Each level that uses portals must define **portal pairs** so entering one endpoint teleports to the other.
 
-Pseudo-structure:
-- function loop(timestamp):
-  - compute dt
-  - if gameState === "playing": update(dt)
-  - draw()
-  - requestAnimationFrame(loop)
+### 4.3 Switch Tiles (Concept)
+- Represented in the grid with tile code **7**.
+- Each switch has a **mode**:
+  - `vertical`: allows exiting **up/down**, blocks **left/right**.
+  - `horizontal`: allows exiting **left/right**, blocks **up/down**.
+- Switches toggle mode when the **player enters** them, changing which directions are allowed next time.
 
-### 6.4 Collision Rules (Walls)
-To prevent passing through walls:
-- Handle X movement and Y movement separately (axis-aligned collision)
-- On each axis:
-  - propose new position
-  - check if entity rectangle intersects any wall tiles
-  - if collision, reject or clamp
+The exact data structures (e.g., `switches = [{ row, col, mode }]`) are documented in `dev_notes.md`.
 
-Simplest wall test:
-- Determine which tiles the entity would occupy after moving
-- If any are walls, block that axis of movement
+---
+
+## 5. Level System
+
+### 5.1 Level Configs
+v1.2 introduces a **level list** in `game.js`, with one entry per level.  
+A typical config includes:
+- **id** and **name** (e.g., “Classic”, “Bridges”, “Switches”).
+- **rows/cols** for maze size.
+- **type** tag (e.g., `'classic'`, `'bridges'`, `'switches'`) to help the factory pick templates.
+- Flags such as **portals: true/false**.
+
+The game tracks:
+- `currentLevelIndex` — index into the levels array.
+
+### 5.2 Loading Levels
+`loadLevel(index)` does the high‑level work of:
+- Asking the **maze factory** for a maze based on the level config.
+- Setting up maze‑specific metadata:
+  - Portal pairs.
+  - Switch tiles and their initial mode.
+  - Player and unicorn spawn positions.
+- Seeding **dots** across the maze according to high‑level rules (e.g., floors and bridges, optional switches).
+- Soft‑resetting per‑level state:
+  - Reset positions, dots, and per‑level timers.
+  - Optionally keep score continuous across levels.
+
+When all dots are collected:
+- If a **next level exists**, increment `currentLevelIndex` and call `loadLevel(next)`.
+- Otherwise, transition to a **WIN** state.
+
+---
+
+## 6. Maze Factory (Concept)
+
+### 6.1 Approach in v1.2
+The v1.2 maze factory is intentionally **simple**:
+- It uses a **small library of hand‑crafted templates** (2D arrays) for each level type.
+- On each run, it **selects** one template for the current level (optionally at random).
+- It **annotates** the chosen template with portals, switches, and spawn points.
+
+This gives “factory‑like” behavior (selection and setup) without needing full procedural generation.
+
+### 6.2 Responsibilities
+At a high level, the maze factory:
+- **Creates mazes for levels**  
+  e.g., `createMazeForLevel(levelConfig) -> { maze, portals, switches, spawns }`.
+- **Picks a template** based on level type.  
+  Different level types can emphasize:
+  - Classic corridors (`'classic'`).
+  - Bridges and vertical layering (`'bridges'`).
+  - Switch tiles and direction puzzles (`'switches'`).
+- **Seeds dots** by scanning the maze for traversable tiles and applying simple rules (e.g., no dots on spawn tiles, optional behavior for portal/switch tiles).
+- Optionally **annotates topology** (intersections, dead ends, four‑ways) to support future AI improvements.
+
+Exact function signatures and data structures belong in `dev_notes.md`.
+
+---
+
+## 7. Game Flow & UI (with Levels)
+
+### 7.1 Game State Flow
+v1.2 reuses the core game states from v1.1, but adds **level awareness**:
+- **Start / Restart**
+  - Set `currentLevelIndex = 0`.
+  - Call `loadLevel(0)`.
+  - Enter the playing state.
+- **During play**
+  - Update player and unicorn as before.
+  - Check for dot collection and gem effects.
+- **On all dots collected**
+  - If more levels remain: advance to the next level and briefly show “Level X”.
+  - If no more levels: show “You Win”.
+- **On unicorn catching player (not invincible)**
+  - Show “Game Over” as in v1.1.
+
+### 7.2 HUD & Messages
+The HUD should now show:
+- **Score** — cumulative or per run, as in v1.1.
+- **Level** — e.g., `Level 2 / 3` and optionally the level name (“Bridges”, “Switches”).
+
+Overlays/messages:
+- “Level 1: Classic Maze”
+- “Level 2: Bridges”
+- “Level 3: Switches”
+- “You Win”
+- “Game Over”
+
+---
+
+## 8. Development Notes & Next Steps
+
+### 8.1 Where to Put Low‑Level Details
+To keep this `README.md` high‑level and friendly:
+- **Implementation details** (tile codes, structs, helper signatures, collision edge cases) should live in **`dev_notes.md`**.
+- This file can document:
+  - Exact maze templates used in v1.2.
+  - Data structures for portals, switches, and dots.
+  - Collision helpers and switch‑exit rules.
+  - Testing checklists for new levels and tiles.
+
+### 8.2 Forward‑Looking Ideas (v1.3+)
+The v1.2 architecture is meant to support:
+- Swapping the template library with a **procedural maze generator**.
+- Adding more tile types (hazards, ice, slow tiles, one‑way doors).
+- Smarter **unicorn AI** that understands maze topology (dead ends, loops).
+- Lives, power‑ups, and multiple players, all powered by the same level/maze factory.
+
+The core principle for v1.2 and beyond:
+- **Keep maze creation and level definition isolated behind the maze factory** so the main game loop stays stable while you experiment with new mazes and mechanics.
