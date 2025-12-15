@@ -3,8 +3,11 @@
 **Version:** 1.1  
 **Author:** Baden + Uviwe (8-years old) the one who begged to make a roblox game and she wanted to play it.
 
-Play v1 of the borning non-roblox game at:
+Current game can be played at:
 https://twinpictures.de/unicorn-run/
+
+Play v1 of the borning non-roblox game found under:
+https://twinpictures.de/unicorn-run/v1/
 
 ---
 
