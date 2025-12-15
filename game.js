@@ -1,3 +1,4 @@
+// v1.2
 (() => {
   // Unicorn Run - core implementation with debug toggles
 
@@ -91,7 +92,7 @@
     })
   );
 
-  // Bridges level: derive from classic and add a single 4-way bridge with side portals
+  // Bridges level: derive from classic and add several 4-way bridges with side portals
   const MAZE_BRIDGES = (() => {
     const base = MAZE_CLASSIC.map((row) => row.slice());
 
@@ -110,10 +111,9 @@
       }
     }
 
-    // Pick the first 4-way we find for the bridge
-    const bridge = fourWays[0];
-    if (bridge) {
-      const { row, col } = bridge;
+    // Use up to three 4-way intersections for bridges
+    for (let i = 0; i < fourWays.length && i < 3; i++) {
+      const { row, col } = fourWays[i];
       // Bridge tile itself
       base[row][col] = 6;
       // Block the horizontal surface path with portals that tunnel under the bridge
@@ -236,8 +236,6 @@
   // --- Maze factory (v1.2) ---
 
   function pickTemplateForLevel(level) {
-    // Allow multiple templates per type and pick one at random
-    const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
     switch (level.type) {
       case "bridges":
         return MAZE_BRIDGES;
@@ -247,23 +245,48 @@
         return MAZE_BRIDGES_SWITCHES;
       case "classic":
       default:
-        return pickRandom([MAZE_CLASSIC, MAZE_CLASSIC_ALT_1, MAZE_CLASSIC_ALT_2]);
+        // For now, keep classic layouts strictly single-lane by using the base maze only.
+        return MAZE_CLASSIC;
     }
   }
 
   function buildPortalsFromMaze(sourceMaze) {
-    const portalTiles = [];
+    const used = new Set();
+    const pairs = [];
+
+    const key = (r, c) => `${r},${c}`;
+
+    // 1) Classic side portals: pair left/right edges on the same row.
     for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        if (sourceMaze[r][c] === 5) {
-          portalTiles.push({ row: r, col: c });
+      if (sourceMaze[r][0] === 5 && sourceMaze[r][COLS - 1] === 5) {
+        pairs.push({
+          a: { row: r, col: 0 },
+          b: { row: r, col: COLS - 1 },
+        });
+        used.add(key(r, 0));
+        used.add(key(r, COLS - 1));
+      }
+    }
+
+    // 2) Bridge tunnels: for each row, look for 5,6,5 patterns and pair the 5s.
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 1; c < COLS - 2; c++) {
+        if (sourceMaze[r][c] === 5 &&
+            sourceMaze[r][c + 1] === 6 &&
+            sourceMaze[r][c + 2] === 5 &&
+            !used.has(key(r, c)) &&
+            !used.has(key(r, c + 2))) {
+          pairs.push({
+            a: { row: r, col: c },
+            b: { row: r, col: c + 2 },
+          });
+          used.add(key(r, c));
+          used.add(key(r, c + 2));
+          c += 2; // skip over this bridge pair
         }
       }
     }
-    const pairs = [];
-    for (let i = 0; i + 1 < portalTiles.length; i += 2) {
-      pairs.push({ a: portalTiles[i], b: portalTiles[i + 1] });
-    }
+
     return pairs;
   }
 
@@ -778,8 +801,100 @@
     const prevY = unicorn.y;
 
     chooseUnicornDir();
-    const moveX = unicorn.dirX * unicorn.speed * dt;
-    const moveY = unicorn.dirY * unicorn.speed * dt;
+
+    // Early look-ahead for special tiles (bridges/switches):
+    // If the unicorn is heading directly into a blocked side of one of these,
+    // reverse and enter random mode *before* it actually reaches the tile.
+    if (unicorn.dirX !== 0 || unicorn.dirY !== 0) {
+      const lookAheadDist = unicorn.w * 0.5; // about half a unicorn width
+      const aheadX = unicorn.x + unicorn.dirX * lookAheadDist;
+      const aheadY = unicorn.y + unicorn.dirY * lookAheadDist;
+      const aheadTile = pixelToGrid(aheadX, aheadY);
+      const aheadCode = tileAt(aheadTile.row, aheadTile.col);
+
+      if (aheadCode === 6 || aheadCode === 7) {
+        let willBeBlocked = false;
+        if (aheadCode === 6) {
+          // Bridge blocks horizontal travel along it
+          if (unicorn.dirX !== 0) willBeBlocked = true;
+        } else {
+          const sw = getSwitchAt(aheadTile.row, aheadTile.col);
+          if (sw) {
+            if (sw.mode === "vertical" && unicorn.dirX !== 0) willBeBlocked = true;
+            if (sw.mode === "horizontal" && unicorn.dirY !== 0) willBeBlocked = true;
+          }
+        }
+
+        if (willBeBlocked) {
+          unicorn.dirX = -unicorn.dirX;
+          unicorn.dirY = -unicorn.dirY;
+          randomStepsLeft = RANDOM_INTERSECTION_COUNT;
+          if (DEBUG_UNICORN) {
+            console.log("Unicorn early reverse before special tile", {
+              aheadTile,
+              aheadCode,
+            });
+          }
+          return;
+        }
+      }
+    }
+
+    let moveX = unicorn.dirX * unicorn.speed * dt;
+    let moveY = unicorn.dirY * unicorn.speed * dt;
+
+    // Bridges & switches: unicorn must respect the same directional blocks as the player
+    const currentTile = pixelToGrid(unicorn.x, unicorn.y);
+    const currentCode = tileAt(currentTile.row, currentTile.col);
+    // On a bridge, only allow vertical crossing (no horizontal movement along it)
+    // For the unicorn, we *only* cancel the movement component and keep its
+    // facing direction so that the "wall hit" logic below can correctly
+    // reverse and enter temporary random mode instead of leaving the unicorn
+    // directionless and stuck.
+    if (currentCode === 6 && moveX !== 0) {
+      moveX = 0;
+    }
+    if (currentCode === 7) {
+      const sw = getSwitchAt(currentTile.row, currentTile.col);
+      if (sw) {
+        if (sw.mode === "vertical" && moveX !== 0) {
+          moveX = 0;
+        } else if (sw.mode === "horizontal" && moveY !== 0) {
+          moveY = 0;
+        }
+      }
+    }
+
+    // Approaching bridges/switches from outside: treat blocked sides like walls
+    const targetTile = pixelToGrid(unicorn.x + moveX, unicorn.y + moveY);
+    const targetCode = tileAt(targetTile.row, targetTile.col);
+    if (targetCode === 6 && moveX !== 0) {
+      moveX = 0;
+    }
+    if (targetCode === 7) {
+      const sw = getSwitchAt(targetTile.row, targetTile.col);
+      if (sw) {
+        if (sw.mode === "vertical" && moveX !== 0) {
+          moveX = 0;
+        } else if (sw.mode === "horizontal" && moveY !== 0) {
+          moveY = 0;
+        }
+      }
+    }
+
+    // If a bridge/switch completely blocks the intended move, treat it like a wall hit:
+    // reverse direction and enter temporary random mode.
+    if (moveX === 0 && moveY === 0) {
+      unicorn.dirX = -unicorn.dirX;
+      unicorn.dirY = -unicorn.dirY;
+      randomStepsLeft = RANDOM_INTERSECTION_COUNT;
+      if (DEBUG_UNICORN) {
+        console.log("Unicorn blocked by special tile -> reverse & random", {
+          tile: currentTile,
+        });
+      }
+      return;
+    }
 
     if (!blocked(unicorn.x + moveX, unicorn.y, unicorn.w, unicorn.h)) unicorn.x += moveX;
     if (!blocked(unicorn.x, unicorn.y + moveY, unicorn.w, unicorn.h)) unicorn.y += moveY;
