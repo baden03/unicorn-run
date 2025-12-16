@@ -63,34 +63,43 @@
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   ];
 
-  // Variant 1: slightly more open center corridors
-  const MAZE_CLASSIC_ALT_1 = MAZE_CLASSIC.map((row, r) =>
-    row.map((tile, c) => {
-      if (tile !== 1) return tile;
-      // Carve a small plus-shaped open area near the middle
-      if (
-        (r === 6 && c >= 8 && c <= 12) ||
-        (c === 10 && r >= 4 && r <= 10)
-      ) {
-        return 0;
-      }
-      return tile;
-    })
-  );
+  // Variant 1: fully custom layout with wider outer loop and zig-zag center
+  const MAZE_CLASSIC_ALT_1 = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+    [1,0,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,0,1],
+    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+    [1,0,1,1,1,0,1,0,1,1,1,1,1,0,1,0,1,1,1,0,1],
+    [1,0,0,0,1,0,1,0,0,0,1,0,0,0,1,0,1,0,0,0,1],
+    [1,1,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,1],
+    [5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5],
+    [1,1,1,0,1,0,1,0,1,1,0,1,1,0,1,0,1,0,1,1,1],
+    [1,0,0,0,1,0,1,0,0,0,1,0,0,0,1,0,1,0,0,0,1],
+    [1,0,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,0,1],
+    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+    [1,0,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,0,1],
+    [1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  ];
 
-  // Variant 2: add a second loop in the lower half
-  const MAZE_CLASSIC_ALT_2 = MAZE_CLASSIC.map((row, r) =>
-    row.map((tile, c) => {
-      if (tile !== 1) return tile;
-      if (
-        r >= 9 && r <= 11 &&
-        c >= 4 && c <= 16
-      ) {
-        return 0;
-      }
-      return tile;
-    })
-  );
+  // Variant 2: fully custom layout with boxy rooms and tighter corridors
+  const MAZE_CLASSIC_ALT_2 = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+    [1,0,1,1,0,1,0,1,1,0,1,0,1,1,0,1,0,1,1,0,1],
+    [1,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1,0,0,1],
+    [1,0,1,0,1,1,1,0,1,1,0,1,1,0,1,1,1,1,0,1,1],
+    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
+    [1,1,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,1],
+    [5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5],
+    [1,1,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,1],
+    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
+    [1,0,1,0,1,1,1,0,1,1,0,1,1,0,1,1,1,1,0,1,1],
+    [1,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1,0,0,1],
+    [1,0,1,1,0,1,0,1,1,0,1,0,1,1,0,1,0,1,1,0,1],
+    [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  ];
 
   // Bridges level: derive from classic and add several 4-way bridges with side portals
   const MAZE_BRIDGES = (() => {
@@ -244,9 +253,16 @@
       case "bridges_switches":
         return MAZE_BRIDGES_SWITCHES;
       case "classic":
-      default:
-        // For now, keep classic layouts strictly single-lane by using the base maze only.
-        return MAZE_CLASSIC;
+      default: {
+        // Level 1 always uses the base classic maze, others can be random
+        if (level.id === 1) {
+          return MAZE_CLASSIC;
+        }
+        // Randomly pick one of the three classic layouts for other classic levels
+        const classicVariants = [MAZE_CLASSIC, MAZE_CLASSIC_ALT_1, MAZE_CLASSIC_ALT_2];
+        const idx = Math.floor(Math.random() * classicVariants.length);
+        return classicVariants[idx];
+      }
     }
   }
 
@@ -714,6 +730,72 @@
     if (DEBUG_PLAYER) console.log("Player", { x: player.x.toFixed(1), y: player.y.toFixed(1), dirX: player.dirX, dirY: player.dirY, desiredX: player.desiredX, desiredY: player.desiredY });
   }
 
+  // Helper function to immediately choose a direction that moves away from player
+  function chooseAvoidDirection() {
+    const dx = player.x - unicorn.x;
+    const dy = player.y - unicorn.y;
+    const allDirs = [
+      { x: 1, y: 0 }, { x: -1, y: 0 },
+      { x: 0, y: 1 }, { x: 0, y: -1 },
+    ];
+    
+    // Get all valid directions (not blocked by walls)
+    const valid = allDirs.filter(dir => {
+      const testX = unicorn.x + dir.x * TILE * 0.6;
+      const testY = unicorn.y + dir.y * TILE * 0.6;
+      return !blocked(testX, testY, unicorn.w, unicorn.h);
+    });
+    
+    if (valid.length === 0) return; // No valid directions
+    
+    // Calculate distance to player for each valid direction
+    const dirScores = valid.map(dir => {
+      const newX = unicorn.x + dir.x * TILE;
+      const newY = unicorn.y + dir.y * TILE;
+      const newDx = player.x - newX;
+      const newDy = player.y - newY;
+      const newDist = Math.sqrt(newDx * newDx + newDy * newDy);
+      
+      // Current distance
+      const currentDist = Math.sqrt(dx * dx + dy * dy);
+      
+      return {
+        dir,
+        dist: newDist,
+        increasesDistance: newDist > currentDist
+      };
+    });
+    
+    // Check if reversing current direction would increase distance
+    const reverseDir = { x: -unicorn.dirX, y: -unicorn.dirY };
+    const reverseOption = dirScores.find(d => d.dir.x === reverseDir.x && d.dir.y === reverseDir.y);
+    
+    if (reverseOption && reverseOption.increasesDistance) {
+      // Reversing would move away, so reverse
+      unicorn.dirX = reverseDir.x;
+      unicorn.dirY = reverseDir.y;
+      return;
+    }
+    
+    // Otherwise, pick the direction that increases distance the most
+    const bestDir = dirScores
+      .filter(d => d.increasesDistance)
+      .sort((a, b) => b.dist - a.dist)[0];
+    
+    if (bestDir) {
+      unicorn.dirX = bestDir.dir.x;
+      unicorn.dirY = bestDir.dir.y;
+    } else {
+      // If no direction increases distance, pick the one that minimizes distance increase
+      // (fallback - should rarely happen)
+      const leastBad = dirScores.sort((a, b) => a.dist - b.dist)[0];
+      if (leastBad) {
+        unicorn.dirX = leastBad.dir.x;
+        unicorn.dirY = leastBad.dir.y;
+      }
+    }
+  }
+
   function chooseUnicornDir() {
     const at = pixelToGrid(unicorn.x, unicorn.y);
     const center = gridToPixel(at.col, at.row);
@@ -1033,10 +1115,8 @@
       score += 5;
       gemsCollected += 1;
       gemCooldown = GEM_RESPAWN_MS;
-      // Force the unicorn to reverse immediately when player gains invincibility
-      unicorn.dirX = -unicorn.dirX;
-      unicorn.dirY = -unicorn.dirY;
-      randomStepsLeft = RANDOM_INTERSECTION_COUNT;
+      // Immediately choose a direction that moves the unicorn away from the player
+      chooseAvoidDirection();
       updateUI();
     }
   }
