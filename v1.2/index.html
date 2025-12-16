@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unicorn Run v1.2</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hud">
+      <div class="hud-row">
+        <div class="hud-score-group">
+          <div id="score" class="hud-score">Score: 0</div>
+          <div id="level" class="hud-level">Level: 1 / 3</div>
+        </div>
+        <div class="hud-actions">
+          <button id="startButton" class="btn primary">Start</button>
+          <button id="pauseButton" class="btn secondary" style="display: none;">Pause</button>
+        </div>
+      </div>
+      <div id="status" class="hud-status">Press Space or Start</div>
+    </header>
+
+    <section class="game-area">
+      <canvas id="gameCanvas" width="672" height="480" aria-label="Unicorn Run game canvas"></canvas>
+      <div class="joystick joystick-left" id="joystickLeft">
+        <div class="joystick-base"></div>
+        <div class="joystick-stick"></div>
+      </div>
+      <div class="joystick joystick-right" id="joystickRight">
+        <div class="joystick-base"></div>
+        <div class="joystick-stick"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="game.js?v=1.2.1"></script>
+</body>
+</html>
