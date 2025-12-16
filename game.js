@@ -1,4 +1,4 @@
-// v1.2
+// v1.2.1
 (() => {
   // Unicorn Run - core implementation with debug toggles
 
@@ -18,6 +18,7 @@
   const levelEl = document.getElementById("level");
   const statusEl = document.getElementById("status");
   const startButton = document.getElementById("startButton");
+  const pauseButton = document.getElementById("pauseButton");
   const joystickLeft = document.getElementById("joystickLeft");
   const joystickRight = document.getElementById("joystickRight");
 
@@ -40,6 +41,7 @@
     TITLE: "title",
     PLAYING_NORMAL: "playing_normal",
     PLAYING_INVINCIBLE: "playing_invincible",
+    PAUSED: "paused",
     GAMEOVER: "gameover",
     WIN: "win",
   };
@@ -441,6 +443,7 @@
       [STATE.TITLE]: "Press Space or Start",
       [STATE.PLAYING_NORMAL]: "Collect dots + gems!",
       [STATE.PLAYING_INVINCIBLE]: "Invincible! Avoid walls.",
+      [STATE.PAUSED]: "Paused - Press Space or Resume",
       [STATE.GAMEOVER]: "Game Over - press Space or Start",
       [STATE.WIN]: "You win! Press Space or Start",
     };
@@ -451,6 +454,10 @@
     if (startButton) {
       startButton.textContent = gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE ? "Restart" : "Start";
     }
+    if (pauseButton) {
+      pauseButton.style.display = (gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE || gameState === STATE.PAUSED) ? "block" : "none";
+      pauseButton.textContent = gameState === STATE.PAUSED ? "Resume" : "Pause";
+    }
   }
 
   // Input
@@ -459,12 +466,31 @@
       e.preventDefault();
     }
     keys.add(e.code);
-    if (e.code === "Space" && (gameState === STATE.TITLE || gameState === STATE.GAMEOVER || gameState === STATE.WIN)) {
-      startGame();
+    if (e.code === "Space") {
+      if (gameState === STATE.TITLE || gameState === STATE.GAMEOVER || gameState === STATE.WIN) {
+        startGame();
+      } else if (gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE) {
+        gameState = STATE.PAUSED;
+        updateUI();
+      } else if (gameState === STATE.PAUSED) {
+        // Resume to the previous playing state
+        gameState = invincibleTimer > 0 ? STATE.PLAYING_INVINCIBLE : STATE.PLAYING_NORMAL;
+        updateUI();
+      }
     }
   });
   document.addEventListener("keyup", (e) => keys.delete(e.code));
   startButton?.addEventListener("click", (e) => { e.preventDefault(); startGame(); });
+  pauseButton?.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE) {
+      gameState = STATE.PAUSED;
+      updateUI();
+    } else if (gameState === STATE.PAUSED) {
+      gameState = invincibleTimer > 0 ? STATE.PLAYING_INVINCIBLE : STATE.PLAYING_NORMAL;
+      updateUI();
+    }
+  });
 
   function joystickHandlers(el, side) {
     const state = joystickState[side];
@@ -1391,7 +1417,8 @@
     ctx.fillText(text, CANVAS_W / 2, CANVAS_H / 2 - 10);
     ctx.fillStyle = "#fff";
     ctx.font = "24px Arial";
-    ctx.fillText("Press Space or Start", CANVAS_W / 2, CANVAS_H / 2 + 32);
+    const instructionText = gameState === STATE.PAUSED ? "Press Space or Resume" : "Press Space or Start";
+    ctx.fillText(instructionText, CANVAS_W / 2, CANVAS_H / 2 + 32);
   }
 
   function rainbowColor(t) {
@@ -1416,6 +1443,7 @@
       if (gameState === STATE.TITLE) drawOverlay("Unicorn Run", "#ffd166");
       if (gameState === STATE.GAMEOVER) drawOverlay("Game Over", "#ff4d6d");
       if (gameState === STATE.WIN) drawOverlay("You Win!", "#36cfc9");
+      if (gameState === STATE.PAUSED) drawOverlay("Paused", "#ffd166");
     }
   }
 
@@ -1432,7 +1460,7 @@
 
     const playing = gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE;
 
-    if (playing && levelIntroTimer <= 0) {
+    if (playing && levelIntroTimer <= 0 && gameState !== STATE.PAUSED) {
       updatePlayer(dt);
       updateUnicorn(dt);
       updateTrail(dt);

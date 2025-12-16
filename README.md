@@ -1,9 +1,9 @@
 ## Unicorn Run v1.2 — Maze Factory & Multi‑Level Mazes
 *Extend Unicorn Run from a single static maze into a level‑based game powered by a reusable maze factory, enabling multiple maze layouts, new tile types, and scalable difficulty.*
 
-**Version:** 1.2  
-**Author:** Baden + Uviwe (8 years old)
-https://twinpictures.de/unicorn-run/
+**Version:** 1.2.1  
+**Author:** Baden + Uviwe (8 years old)  
+**Live:** https://twinpictures.de/unicorn-run/
 
 ---
 
@@ -33,13 +33,22 @@ For the original v1.1 design goals and mechanics, see the `v1.1/README.md`.
 Unicorn Run remains a **top‑down chase game** (Pac‑Man‑style):
 - **Player** moves through a maze, eating dots to gain score.
 - **Unicorn** chases the player using simple chase logic.
-- **Gems** still spawn and give temporary invincibility.
-- **Getting caught** when not invincible still ends the run (or the current life, in future versions).
+- **Gems** spawn periodically and give temporary invincibility (6 seconds).
+- **Getting caught** when not invincible ends the run.
+- **Score system**: Dots (+1), Gems (+5), Tagging unicorn while invincible (+10).
 
 New in v1.2:
-- The run is now a **sequence of levels**, each with its own maze layout.
-- A **maze factory** chooses and initializes the maze for each level.
-- The maze vocabulary is extended with **bridges** and **switch tiles**, alongside existing **portals**.
+- **Multi-level progression**: The game now features 4 distinct levels with unique maze layouts.
+- **Maze factory system**: Reusable factory that generates mazes based on level configuration.
+- **Extended tile types**: 
+  - **Bridges** (tile 6): Visual elevated paths that allow vertical crossing only.
+  - **Switch tiles** (tile 7): Direction-gated intersections that toggle between vertical/horizontal modes.
+  - **Portals** (tile 5): Teleportation points, including side wrap-around and bridge tunnels.
+- **Pause functionality**:
+  - Desktop: Press **Spacebar** to pause/resume during gameplay.
+  - Mobile: **Pause button** in the HUD for easy access.
+- **Level intro screens**: Brief overlay showing level name when starting a new level.
+- **Mobile controls**: Dual joystick support for touch devices.
 
 ---
 
@@ -65,7 +74,7 @@ New in v1.2:
 - Procedural maze generation (v1.2 uses **hand‑crafted templates**).
 - Advanced unicorn pathfinding using maze topology.
 - New entity types (extra enemies, NPCs), power‑ups, lives/health bar, two‑player mode.
-- Persistent high score tracking.
+- **Persistent high score tracking** (planned for future PWA version with local storage/IndexedDB).
 
 Details for data structures, helper functions, and collision rules live in `dev_notes.md` (to be added/expanded as implementation stabilizes).
 
@@ -107,10 +116,16 @@ The exact data structures (e.g., `switches = [{ row, col, mode }]`) are document
 ### 5.1 Level Configs
 v1.2 introduces a **level list** in `game.js`, with one entry per level.  
 A typical config includes:
-- **id** and **name** (e.g., “Classic”, “Bridges”, “Switches”).
+- **id** and **name** (e.g., "Classic", "Bridges", "Switches").
 - **rows/cols** for maze size.
 - **type** tag (e.g., `'classic'`, `'bridges'`, `'switches'`) to help the factory pick templates.
 - Flags such as **portals: true/false**.
+
+**Current Levels (v1.2.1):**
+1. **Classic** — Traditional maze layout with portals.
+2. **Bridges** — Features bridge tiles that allow vertical crossing only.
+3. **Switches** — Introduces switch tiles with direction-gated movement.
+4. **Bridges+Switches** — Combines both bridge and switch mechanics for maximum challenge.
 
 The game tracks:
 - `currentLevelIndex` — index into the levels array.
@@ -177,16 +192,27 @@ v1.2 reuses the core game states from v1.1, but adds **level awareness**:
   - Show “Game Over” as in v1.1.
 
 ### 7.2 HUD & Messages
-The HUD should now show:
-- **Score** — cumulative or per run, as in v1.1.
-- **Level** — e.g., `Level 2 / 3` and optionally the level name (“Bridges”, “Switches”).
+The HUD displays:
+- **Score** — cumulative score across all levels.
+- **Level** — current level number and total (e.g., `Level 2 / 4`).
+- **Status message** — contextual text (e.g., "Collect dots + gems!", "Invincible! Avoid walls.", "Paused").
+- **Start/Restart button** — begins a new game or restarts the current run.
+- **Pause/Resume button** — visible during gameplay on all devices, essential for mobile.
 
 Overlays/messages:
-- “Level 1: Classic Maze”
-- “Level 2: Bridges”
-- “Level 3: Switches”
-- “You Win”
-- “Game Over”
+- **Level intro**: "Level 1: Classic", "Level 2: Bridges", etc. (shown briefly when level starts).
+- **Game states**: "Unicorn Run" (title), "Paused", "Game Over", "You Win!".
+- **Instructions**: Context-appropriate prompts (e.g., "Press Space or Start", "Press Space or Resume").
+
+### 7.3 Controls
+- **Desktop**:
+  - Arrow keys or WASD for movement.
+  - Spacebar to start game, pause/resume during gameplay.
+  - Start button for new game/restart.
+- **Mobile**:
+  - Dual joystick controls (left/right) for movement.
+  - Pause/Resume button in HUD.
+  - Start button for new game/restart.
 
 ---
 
@@ -201,12 +227,23 @@ To keep this `README.md` high‑level and friendly:
   - Collision helpers and switch‑exit rules.
   - Testing checklists for new levels and tiles.
 
-### 8.2 Forward‑Looking Ideas (v1.3+)
+### 8.2 Forward‑Looking Ideas (v1.3+ / PWA Version)
 The v1.2 architecture is meant to support:
+- **PWA (Progressive Web App) conversion**:
+  - Offline play capability.
+  - Installable on mobile devices.
+  - **High score tracking** with persistent local storage (IndexedDB/localStorage).
+  - Score leaderboards (local or cloud-synced).
 - Swapping the template library with a **procedural maze generator**.
 - Adding more tile types (hazards, ice, slow tiles, one‑way doors).
 - Smarter **unicorn AI** that understands maze topology (dead ends, loops).
 - Lives, power‑ups, and multiple players, all powered by the same level/maze factory.
+- Sound effects and background music.
+- Achievements and unlockable content.
 
 The core principle for v1.2 and beyond:
 - **Keep maze creation and level definition isolated behind the maze factory** so the main game loop stays stable while you experiment with new mazes and mechanics.
+
+### 8.3 Version History
+- **v1.2.1**: Added pause functionality (desktop spacebar + mobile pause button).
+- **v1.2.0**: Initial multi-level release with maze factory, bridges, switches, and level progression.
