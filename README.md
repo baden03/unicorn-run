@@ -1,249 +1,229 @@
-## Unicorn Run v1.2 — Maze Factory & Multi‑Level Mazes
-*Extend Unicorn Run from a single static maze into a level‑based game powered by a reusable maze factory, enabling multiple maze layouts, new tile types, and scalable difficulty.*
+## Unicorn Run v1.3 — Personalities, Persistence & Play Anywhere
+*Evolve Unicorn Run into a character-driven, replayable arcade game with persistent high scores, multiple unicorn personalities, true over/under maze logic, and a mobile-first PWA foundation.*
 
-**Version:** 1.2.1  
+**Version:** 1.3.0 
 **Author:** Baden + Uviwe (8 years old)  
-**Live:** https://twinpictures.de/unicorn-run/
+**Play here:** https://twinpictures.de/unicorn-run/
 
 ---
 
-## 1. Goals
+## 1. Vision for v1.3
 
-### 1.1 Primary Goal for v1.2
-- **Evolve Unicorn Run** from a single‑maze v1.1 prototype into a **multi‑level** game.
-- Keep the **core feel and controls** of v1.1, while making it easy to add new mazes and mechanics.
-- Make the codebase friendlier for future add‑ons by isolating maze logic behind a **maze factory**.
+Unicorn Run v1.3 focuses on **replayability, character, and persistence**.
+While v1.2 introduced multi-level mazes and a maze factory, v1.3 asks a new question:
 
-### 1.2 Design Goals (Building on v1.1)
-- **Simple rules, immediate feedback**  
-  Players still eat dots, chase gems, and dodge the angry unicorn.
-- **Tile‑based collisions**  
-  Movement stays grid‑validated (same as v1.1), now across multiple mazes.
-- **Clean separation of concerns**  
-  Game loop, input, and entities stay mostly unchanged; v1.2 focuses on maze/level loading.
-- **Extendable foundation**  
-  The maze factory should make it trivial to add new level templates, tile types, and AI improvements later.
+> *Why should players come back tomorrow?*
 
-For the original v1.1 design goals and mechanics, see the `v1.1/README.md`.
+The answer is:
+- The game **remembers you** (high scores).
+- The unicorns are no longer identical — they have **personalities**.
+- The maze gains **real depth** (true tunnels, not teleports).
+- The game works **anywhere**, especially on mobile.
+
+v1.3 deliberately stays high-level and stable, laying foundations for larger future expansions without overloading the core gameplay.
 
 ---
 
-## 2. Game Summary (v1.2)
+## 2. Where to Play
 
-Unicorn Run remains a **top‑down chase game** (Pac‑Man‑style):
-- **Player** moves through a maze, eating dots to gain score.
-- **Unicorn** chases the player using simple chase logic.
-- **Gems** spawn periodically and give temporary invincibility (6 seconds).
-- **Getting caught** when not invincible ends the run.
-- **Score system**: Dots (+1), Gems (+5), Tagging unicorn while invincible (+10).
+Unicorn Run is always playable at:
 
-New in v1.2:
-- **Multi-level progression**: The game now features 4 distinct levels with unique maze layouts.
-- **Maze factory system**: Reusable factory that generates mazes based on level configuration.
-- **Extended tile types**: 
-  - **Bridges** (tile 6): Visual elevated paths that allow vertical crossing only.
-  - **Switch tiles** (tile 7): Direction-gated intersections that toggle between vertical/horizontal modes.
-  - **Portals** (tile 5): Teleportation points, including side wrap-around and bridge tunnels.
-- **Pause functionality**:
-  - Desktop: Press **Spacebar** to pause/resume during gameplay.
-  - Mobile: **Pause button** in the HUD for easy access.
-- **Level intro screens**: Brief overlay showing level name when starting a new level.
-- **Mobile controls**: Dual joystick support for touch devices.
+**https://twinpictures.de/unicorn-run/**
+
+The same URL serves:
+- Desktop browsers
+- Mobile browsers
+- Installed PWA version (v1.3+)
+
+No separate app store installation is required.
 
 ---
 
-## 3. Scope for v1.2
+## 3. Core Pillars of v1.3
 
-### 3.1 In Scope
-- **Level system**
-  - List of level configs (id, name, type, size, flags).
-  - `currentLevelIndex` and `loadLevel(index)` to move between levels.
-- **Maze factory inside `game.js`**
-  - Select a **template maze** based on level config.
-  - Initialize **portals**, **switch tiles**, and **spawn positions**.
-  - Seed **dots** based on traversable tiles.
-- **Extended tile types (high‑level)**
-  - Portals/tunnels (wrap‑around) using an existing tile code.
-  - Bridges (visual over/under feel, but simple floor behavior).
-  - Switch tiles that constrain movement directions at certain intersections.
-- **HUD updates**
-  - Display **current level** and optional level name.
-  - Simple “Level X” / “You Win” / “Game Over” messages.
+### 3.1 Persistence & Replay (High Scores)
 
-### 3.2 Out of Scope (Deferred)
-- Procedural maze generation (v1.2 uses **hand‑crafted templates**).
-- Advanced unicorn pathfinding using maze topology.
-- New entity types (extra enemies, NPCs), power‑ups, lives/health bar, two‑player mode.
-- **Persistent high score tracking** (planned for future PWA version with local storage/IndexedDB).
+- Introduce a **classic arcade high-score table**
+  - Track (and show) time to complete to determine point ties
+  - Each *advanced* level should display fastest time & name on the HUD
+- Players can enter a **five-letter name** when achieving a high score
+- High scores are:
+  - Saved locally for offline play
+  - Synced when the device reconnects to the internet (PWA)
+- Designed for **multiple players sharing one device**
 
-Details for data structures, helper functions, and collision rules live in `dev_notes.md` (to be added/expanded as implementation stabilizes).
+This transforms Unicorn Run from a one-off experience into a competitive, replayable game.
 
 ---
 
-## 4. Maze & Tile Model (High‑Level)
+### 3.2 Mobile-First PWA Foundation
 
-The maze is still a **2D integer grid**: `maze[row][col]`.
+v1.3 introduces Unicorn Run as a **Progressive Web App (PWA)**:
 
-### 4.1 Core Tile Types
-- **0 – Floor**: walkable.
-- **1 – Wall**: blocks movement.
-- **5 – Portal / Tunnel**: walkable tile that teleports the player/unicorn to a paired location.
-- **6 – Bridge floor**: walkable tile, drawn as an elevated path (visual variety only in v1.2).
-- **7 – Switch tile**: walkable intersection tile with **direction‑gated exits**.
+- Installable on mobile devices
+- Runs in **full-screen**
+- **Landscape-only** orientation enforced on mobile
+- Offline-first gameplay
+- Desktop support remains fully intact
 
-In general:
-- **Walkable tiles**: `{ 0, 5, 6, 7 }`
-- **Blocked tiles**: `{ 1 }`
-
-### 4.2 Portals and “Tunnels”
-- Portals and tunnels **share the same tile code** (5).
-- Differences in behavior (e.g., side wrap‑around vs. under‑bridge tunnel) are handled in logic, not with a separate tile code.
-- Each level that uses portals must define **portal pairs** so entering one endpoint teleports to the other.
-
-### 4.3 Switch Tiles (Concept)
-- Represented in the grid with tile code **7**.
-- Each switch has a **mode**:
-  - `vertical`: allows exiting **up/down**, blocks **left/right**.
-  - `horizontal`: allows exiting **left/right**, blocks **up/down**.
-- Switches toggle mode when the **player enters** them, changing which directions are allowed next time.
-
-The exact data structures (e.g., `switches = [{ row, col, mode }]`) are documented in `dev_notes.md`.
+The goal is not “cloud everything”, but:
+> *The game should feel native, fast, and reliable anywhere.*
 
 ---
 
-## 5. Level System
+### 3.3 Unicorn Factory & Personalities
 
-### 5.1 Level Configs
-v1.2 introduces a **level list** in `game.js`, with one entry per level.  
-A typical config includes:
-- **id** and **name** (e.g., "Classic", "Bridges", "Switches").
-- **rows/cols** for maze size.
-- **type** tag (e.g., `'classic'`, `'bridges'`, `'switches'`) to help the factory pick templates.
-- Flags such as **portals: true/false**.
+Unicorn Run v1.3 introduces a **Unicorn Factory**:
 
-**Current Levels (v1.2.1):**
-1. **Classic** — Traditional maze layout with portals.
-2. **Bridges** — Features bridge tiles that allow vertical crossing only.
-3. **Switches** — Introduces switch tiles with direction-gated movement.
-4. **Bridges+Switches** — Combines both bridge and switch mechanics for maximum challenge.
+- Unicorns are defined in **structured data**, not hard-coded logic
+- Each unicorn has:
+  - A name
+  - A personality
+  - Distinct movement and chase behavior rules
+- Early levels may include only one unicorn
+- Later levels can include **multiple unicorns in the same maze**
 
-The game tracks:
-- `currentLevelIndex` — index into the levels array.
+Inspired by classic arcade design, each unicorn is:
+- Predictable
+- Learnable
+- Dangerous in a different way
 
-### 5.2 Loading Levels
-`loadLevel(index)` does the high‑level work of:
-- Asking the **maze factory** for a maze based on the level config.
-- Setting up maze‑specific metadata:
-  - Portal pairs.
-  - Switch tiles and their initial mode.
-  - Player and unicorn spawn positions.
-- Seeding **dots** across the maze according to high‑level rules (e.g., floors and bridges, optional switches).
-- Soft‑resetting per‑level state:
-  - Reset positions, dots, and per‑level timers.
-  - Optionally keep score continuous across levels.
+One early personality is explicitly planned:
+- **“Drunk-y”** — unpredictable, sloppy movement, but sometimes accidentally brilliant
 
-When all dots are collected:
-- If a **next level exists**, increment `currentLevelIndex` and call `loadLevel(next)`.
-- Otherwise, transition to a **WIN** state.
+Detailed unicorn behavior rules live in [dev_notes](./dev_notes.md).
 
 ---
 
-## 6. Maze Factory (Concept)
+### 3.4 True Over / Under Maze Logic
 
-### 6.1 Approach in v1.2
-The v1.2 maze factory is intentionally **simple**:
-- It uses a **small library of hand‑crafted templates** (2D arrays) for each level type.
-- On each run, it **selects** one template for the current level (optionally at random).
-- It **annotates** the chosen template with portals, switches, and spawn points.
+Bridges and tunnels in v1.3 use **true over/under logic**, not repurposed portals:
 
-This gives “factory‑like” behavior (selection and setup) without needing full procedural generation.
+- Entities can pass **under** a bridge while others move **over** it
+- No teleportation shortcuts
+- Movement respects physical maze layering
 
-### 6.2 Responsibilities
-At a high level, the maze factory:
-- **Creates mazes for levels**  
-  e.g., `createMazeForLevel(levelConfig) -> { maze, portals, switches, spawns }`.
-- **Picks a template** based on level type.  
-  Different level types can emphasize:
-  - Classic corridors (`'classic'`).
-  - Bridges and vertical layering (`'bridges'`).
-  - Switch tiles and direction puzzles (`'switches'`).
-- **Seeds dots** by scanning the maze for traversable tiles and applying simple rules (e.g., no dots on spawn tiles, optional behavior for portal/switch tiles).
-- Optionally **annotates topology** (intersections, dead ends, four‑ways) to support future AI improvements.
+This is the first step toward:
+- Vertical maze depth
+- Multi-room layouts
+- Future stairs and floors
 
-Exact function signatures and data structures belong in `dev_notes.md`.
+v1.3 limits scope to **single-screen mazes with real tunnels**, keeping gameplay readable and fair.
 
 ---
 
-## 7. Game Flow & UI (with Levels)
+### 3.5 Tutorial Path (Skippable)
 
-### 7.1 Game State Flow
-v1.2 reuses the core game states from v1.1, but adds **level awareness**:
-- **Start / Restart**
-  - Set `currentLevelIndex = 0`.
-  - Call `loadLevel(0)`.
-  - Enter the playing state.
-- **During play**
-  - Update player and unicorn as before.
-  - Check for dot collection and gem effects.
-- **On all dots collected**
-  - If more levels remain: advance to the next level and briefly show “Level X”.
-  - If no more levels: show “You Win”.
-- **On unicorn catching player (not invincible)**
-  - Show “Game Over” as in v1.1.
+To support new players and younger audiences, v1.3 introduces a **guided tutorial path**:
 
-### 7.2 HUD & Messages
-The HUD displays:
-- **Score** — cumulative score across all levels.
-- **Level** — current level number and total (e.g., `Level 2 / 4`).
-- **Status message** — contextual text (e.g., "Collect dots + gems!", "Invincible! Avoid walls.", "Paused").
-- **Start/Restart button** — begins a new game or restarts the current run.
-- **Pause/Resume button** — visible during gameplay on all devices, essential for mobile.
+- Short, focused tutorial levels
+- Each tutorial introduces **one concept at a time**:
+  - Movement & Dots
+  - Gems & Unicorn behavior
+  - Bridges / tunnels
+  - Switches
+- Tutorial can be **skipped entirely** to jump straight into gameplay
 
-Overlays/messages:
-- **Level intro**: "Level 1: Classic", "Level 2: Bridges", etc. (shown briefly when level starts).
-- **Game states**: "Unicorn Run" (title), "Paused", "Game Over", "You Win!".
-- **Instructions**: Context-appropriate prompts (e.g., "Press Space or Start", "Press Space or Resume").
-
-### 7.3 Controls
-- **Desktop**:
-  - Arrow keys or WASD for movement.
-  - Spacebar to start game, pause/resume during gameplay.
-  - Start button for new game/restart.
-- **Mobile**:
-  - Dual joystick controls (left/right) for movement.
-  - Pause/Resume button in HUD.
-  - Start button for new game/restart.
+The tutorial is built using the same level and maze systems as the main game.
 
 ---
 
-## 8. Development Notes & Next Steps
+### 3.6 Lives System (Forgiveness Without Complexity)
 
-### 8.1 Where to Put Low‑Level Details
-To keep this `README.md` high‑level and friendly:
-- **Implementation details** (tile codes, structs, helper signatures, collision edge cases) should live in **`dev_notes.md`**.
-- This file can document:
-  - Exact maze templates used in v1.2.
-  - Data structures for portals, switches, and dots.
-  - Collision helpers and switch‑exit rules.
-  - Testing checklists for new levels and tiles.
+v1.3 adds a simple lives system:
 
-### 8.2 Forward‑Looking Ideas (v1.3+ / PWA Version)
-The v1.2 architecture is meant to support:
-- **PWA (Progressive Web App) conversion**:
-  - Offline play capability.
-  - Installable on mobile devices.
-  - **High score tracking** with persistent local storage (IndexedDB/localStorage).
-  - Score leaderboards (local or cloud-synced).
-- Swapping the template library with a **procedural maze generator**.
-- Adding more tile types (hazards, ice, slow tiles, one‑way doors).
-- Smarter **unicorn AI** that understands maze topology (dead ends, loops).
-- Lives, power‑ups, and multiple players, all powered by the same level/maze factory.
-- Sound effects and background music.
-- Achievements and unlockable content.
+- Players start with **3 lives**
+- Losing a life resets positions but continues the run
+- Extra lives can be earned through score milestones
 
-The core principle for v1.2 and beyond:
-- **Keep maze creation and level definition isolated behind the maze factory** so the main game loop stays stable while you experiment with new mazes and mechanics.
+No health bars, damage states, or hearts are introduced yet — the system remains intentionally simple and readable.
 
-### 8.3 Version History
-- **v1.2.1**: Added pause functionality (desktop spacebar + mobile pause button).
-- **v1.2.0**: Initial multi-level release with maze factory, bridges, switches, and level progression.
+---
+
+## 4. Game Summary (v1.3)
+
+Unicorn Run remains a **top-down, tile-based chase game**:
+
+- Collect dots to score points
+- Grab gems for temporary invincibility
+- Avoid (or chase) unicorns depending on state
+- Learn unicorn personalities and maze rules
+- Progress through multiple levels
+- Compete for the high score
+
+What changes in v1.3 is **depth, memory, and character**, not the core controls.
+
+---
+
+## 5. Scope for v1.3
+
+### 5.1 In Scope
+- High-score system & time with five-letter name entry
+- Local persistence + offline support
+- PWA installability and mobile-first layout
+- Unicorn Factory with multiple personalities
+- Multiple unicorns per maze (limited and controlled)
+- True over/under tunnel logic
+- Skippable tutorial path
+- Lives system
+
+### 5.2 Explicitly Out of Scope
+- Online leaderboards
+- User accounts or authentication
+- User-generated maze uploads
+- Procedural maze generation
+- Multi-floor room transitions
+- Health / damage systems
+- 2.5D or full 3D rendering
+
+These are intentionally deferred to future versions.
+
+---
+
+## 6. Architecture Notes (High-Level)
+
+v1.3 builds directly on the v1.2 foundation:
+
+- Maze creation remains isolated behind the **maze factory**
+- Unicorn behavior is isolated behind the **unicorn factory**
+- Game loop, input, and rendering remain stable
+- New features are layered through data and configuration
+
+All **low-level design, schemas, and algorithms** are documented in:
+
+➡ **`dev_notes.md`**
+
+This includes:
+- High score data models
+- Unicorn definition schema
+- Tunnel / over-under collision rules
+- PWA caching and sync strategy
+- Tutorial level structure
+- Testing and edge-case notes
+
+---
+
+## 7. Forward-Looking Direction (Beyond v1.3)
+
+v1.3 intentionally prepares the ground for:
+
+- Community maze designers and sharing
+- Rated and curated mazes
+- Multi-room and multi-floor levels
+- Additional unicorn personalities
+- Special NPCs and events
+- Visual style experiments (2.5D / 3D spin-offs)
+
+The guiding principle remains unchanged:
+
+> **Keep the core game simple, readable, and fun —  
+> let complexity emerge through rules, not controls.**
+
+---
+
+## 8. Version History
+
+- **v1.3.0 (planned)** — High scores, PWA foundation, unicorn personalities, true tunnels, tutorial path
+- **v1.2.1** — Pause support (desktop + mobile)
+- **v1.2.0** — Multi-level mazes, maze factory, bridges, switches
+- **v1.1.x** — Single-maze prototype and core mechanics

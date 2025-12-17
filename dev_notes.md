@@ -1,280 +1,346 @@
-## Unicorn Run v1.2 – Developer Notes
+# Unicorn Run v1.3 — Developer Notes
+*Low-level technical notes, schemas, and implementation guidance for v1.3.*
 
-This file captures lower-level implementation details for the v1.2 maze factory, level system, and new tile behaviors. It is referenced by `README.md` and is intended for developers extending the game.
-
----
-
-## 1. Tile Codes & Constants
-
-In `game.js`:
-
-- `TILE = 32` (pixels)
-- Grid dimensions (all levels in v1.2 share these for now):
-  - `ROWS = 15`
-  - `COLS = 21`
-
-Tile codes in `maze[row][col]`:
-
-- `0` – floor (walkable)
-- `1` – wall (blocked)
-- `5` – portal / tunnel (walkable + wrap/teleport behavior)
-- `6` – bridge floor (walkable, visually elevated)
-- `7` – switch tile (walkable, exit directions constrained)
-
-Walkability:
-
-- Walkable for movement: `{ 0, 5, 6, 7 }`
-- Blocked: `{ 1 }` (checked via `isWall(row, col)` which uses `tileAt`).
+**Version:** 1.3.0 
+**Related README:** README.md  
+**Play:** https://twinpictures.de/unicorn-run/
 
 ---
 
-## 2. Level & Maze Factory Structures
+## 0. Purpose of This File
 
-### 2.1 Levels
+This document contains **all low-level details** intentionally omitted from `README.md`, including:
 
-Defined near the top of `game.js`:
+- Data structures
+- Behavioral rules
+- Engine extensions
+- Edge cases
+- Architectural constraints
 
-- `const levels = [ { id, name, type, rows, cols, portals }, ... ]`
-- v1.2 ships with three levels:
-  - `type: "classic"` – baseline maze.
-  - `type: "bridges"` – same layout but with bridge tiles (`6`) across key corridors.
-  - `type: "switches"` – same layout but with switch tiles (`7`) at select intersections.
-- `let currentLevelIndex = 0;`
+Guiding principle:
 
-### 2.2 Maze Templates
-
-Templates are hard-coded in `game.js`:
-
-- `MAZE_CLASSIC` – the original v1.1 maze.
-- `MAZE_BRIDGES` – derived from `MAZE_CLASSIC` by mapping certain long corridors to `6`.
-- `MAZE_SWITCHES` – derived from `MAZE_CLASSIC` by turning selected floor tiles into `7`.
-
-These are used only by the maze factory and are cloned per level.
-
-### 2.3 Factory API
-
-Key functions in `game.js`:
-
-- `pickTemplateForLevel(levelConfig)`  
-  Returns one of `MAZE_CLASSIC`, `MAZE_BRIDGES`, or `MAZE_SWITCHES` based on `levelConfig.type`.
-
-- `buildPortalsFromMaze(sourceMaze)`  
-  Scans for tiles equal to `5` and pairs them sequentially:
-  - Returns: `[{ a: { row, col }, b: { row, col } }, ...]`
-  - Currently used as metadata (existing wrap-around still uses side columns); can be expanded later.
-
-- `buildSwitchesFromMaze(sourceMaze)`  
-  Scans for tiles equal to `7` and builds:
-  - `[{ row, col, mode }]` where `mode` alternates `"vertical"` / `"horizontal"` for variety.
-
-- `createMazeForLevel(levelConfig)`  
-  - Clones the selected template.
-  - Builds `portals` and `switches`.
-  - Defines `spawns`:
-    - `player: { row: 1, col: 1 }`
-    - `unicorn: { row: 13, col: 19 }`
-  - Returns: `{ maze, portals, switches, spawns }`
-
-- `seedDotsFromMaze(sourceMaze, levelConfig, spawns)`  
-  - Clears and fills `dots` set with `"row,col"` strings.
-  - Places dots on tiles `{0, 6, 7}` (floor, bridges, switches), skipping:
-    - Player spawn tile.
-    - Unicorn spawn tile.
-  - Currently **skips tile `5`** (portals) to avoid confusing “teleport dot” visuals.
-
-Helper:
-
-- `getSwitchAt(row, col)`  
-  Returns switch object from global `switches` array or `null` if none.
-
-- `showLevelIntro()`  
-  Sets `levelIntroText` to `"Level X: Name"` and `levelIntroTimer` to 1.5 seconds.
-
-- `loadLevel(index, options)`  
-  - Options: `{ resetScore = false, showIntro = true }`.
-  - Sets `currentLevelIndex`, calls `createMazeForLevel`, assigns `maze`, `portals`, `switches`.
-  - Calls `resetEntities(spawns)` and `seedDotsFromMaze`.
-  - Resets `gemCooldown`, calls `placeGem()`.
-  - Optionally resets score and shows intro.
-  - Sets `gameState` to playing and calls `updateUI()`.
+README.md explains *what and why*  
+dev_notes.md explains *how*
 
 ---
 
-## 3. Entity & Movement Details
+## 1. High-Level Architectural Constraints
 
-### 3.1 Entities
+v1.3 must not destabilize the v1.2 game loop.
 
-- `player`: `{ x, y, w, h, dirX, dirY, desiredX, desiredY, speed }`
-- `unicorn`: `{ x, y, w, h, dirX, dirY, speed }`
+The following systems remain unchanged:
+- Main update loop
+- Rendering cadence
+- Input handling
+- Grid-based movement validation
 
-Entity reset:
-
-- `resetEntities(spawns)`:
-  - Uses `gridToPixel` on `spawns.player` and `spawns.unicorn`.
-  - Resets movement vectors, invincibility-related state, unicorn trail and stars, etc.
-
-### 3.2 Movement & Collisions
-
-Core helpers:
-
-- `pixelToGrid(x, y)` / `gridToPixel(col, row)`
-- `tileAt(row, col)`
-- `isWall(row, col)` – true iff tile is `1`.
-- `blocked(x, y, w, h)` – checks the four rectangle corners against walls via `isWall`.
-
-Player movement (`updatePlayer`):
-
-- Input (keys / joystick) sets `desiredX` / `desiredY`.
-- Turning and starting movement rely on proximity to grid centers and `blocked`.
-- Movement uses:
-  - `moveX = player.dirX * player.speed * dt`
-  - `moveY = player.dirY * player.speed * dt`
-
-Unicorn movement (`updateUnicorn`):
-
-- Uses `chooseUnicornDir()` for simple greedy/random chase logic.
-- Moves similarly with `moveX`/`moveY` and `blocked`.
-- Respects portals through `applyPortal(unicorn)`.
+All new features are layered via:
+- Factories (maze, unicorn)
+- Data-driven configuration
+- Minimal new global state
 
 ---
 
-## 4. Switch Tile Mechanics
+## 2. Game State Additions (v1.3)
 
-Switch tiles use:
+### 2.1 New Game States
 
-- Global array:  
-  `let switches = [{ row, col, mode }]`
-- `mode` is either `"vertical"` or `"horizontal"`.
+Recommended additions:
+- TUTORIAL
+- ENTER_HIGH_SCORE
+- SHOW_HIGH_SCORES
 
-### 4.1 Exit Constraints
+Existing states (START, PLAYING, PAUSED, GAME_OVER, WIN) remain valid.
 
-While an entity is **on** a switch tile (`tileAt(row, col) === 7`), movement is constrained:
-
-- If `mode === "vertical"`:
-  - Exits `up/down` allowed.
-  - Exits `left/right` blocked.
-- If `mode === "horizontal"`:
-  - Exits `left/right` allowed.
-  - Exits `up/down` blocked.
-
-Implementation (high level):
-
-- In `updatePlayer`:
-  - Compute `moveX` / `moveY` as usual.
-  - Get current grid tile; if it’s a switch, fetch `sw = getSwitchAt(row, col)`.
-  - If `sw.mode === "vertical"` and `moveX !== 0` → zero `moveX` and `player.dirX`.
-  - If `sw.mode === "horizontal"` and `moveY !== 0` → zero `moveY` and `player.dirY`.
-
-- In `updateUnicorn`:
-  - Similar logic, zeroing forbidden axis and its direction component.
-
-### 4.2 Toggle Rule
-
-- Track last tile where the player stood:
-  - `lastPlayerTileRow`, `lastPlayerTileCol`.
-- On each `updatePlayer`:
-  - Compute `currentTile = pixelToGrid(player.x, player.y)`.
-  - If tile changed and new tile code is `7`:
-    - Fetch `sw = getSwitchAt(row, col)` and toggle:
-      - `sw.mode = (sw.mode === "vertical" ? "horizontal" : "vertical")`.
-  - Update `lastPlayerTileRow/Col`.
-
-Notes:
-
-- **Only the player toggles switches**.
-- The unicorn **respects** switch exit constraints but does not toggle them.
-- Toggle occurs **once per entry**, not every frame while standing on the tile.
-
-### 4.3 Rendering
-
-In `drawMaze()`:
-
-- For `t === 7`:
-  - Draw a light-colored base tile.
-  - Draw a cross (both axes).
-  - Use `getSwitchAt(r, c)` to highlight the active axis:
-    - Vertical: highlight vertical line.
-    - Horizontal: highlight horizontal line.
+State transitions should be explicit and centralized.
 
 ---
 
-## 5. Bridges & Portals
+## 3. High Score System
 
-### 5.1 Bridges (Tile 6)
+### 3.1 Data Model
 
-Behavior:
+High scores are stored as a list of entries:
 
-- Treated exactly like floor for:
-  - Movement (`blocked` only checks walls).
-  - Dot placement (`seedDotsFromMaze` places dots on `6`).
+```js
+{
+  name: "ABCDE",              // 5-letter arcade name
+  score: 12345,
 
-Rendering:
+  levelReached: 4,            // highest level reached
+  levelsCompleted: 4,         // explicit, clearer than inferring
 
-- In `drawMaze()`:
-  - Light floor fill (`#eef2ff`).
-  - Inset stroked rectangle to suggest elevation.
+  timing: {
+    totalMs: 215432,          // total run time in milliseconds
+    perLevelMs: [
+      53210,                  // Level 1
+      48765,                  // Level 2
+      61234,                  // Level 3
+      42223                   // Level 4
+    ]
+  },
 
-### 5.2 Portals / Tunnels (Tile 5)
+  deaths: 2,                  // optional but very useful
+  unicornsDefeated: 5,        // optional future stat
 
-Behavior:
+  timestamp: 1700000000       // unix epoch (when run ended)
+}
+```
 
-- Side-wrap portals remain implemented via `applyPortal(entity)`:
-  - If `entity` is on a portal tile at left or right edges (col `0` or `COLS - 1`), warp to the opposite side.
-- All portal/tunnel variants still use tile code `5`.
-- `buildPortalsFromMaze` pairs all portal tiles, which can later support:
-  - Non-side tunnels.
-  - Under-bridge tunnels with different teleport semantics.
+Constraints:
+- Fixed-length name (5 chars)
+- Uppercase A–Z only
+- Stable sorting by score desc, then timestamp asc
 
-Rendering:
+### 3.2 Storage Strategy
 
-- In `drawMaze()`:
-  - Tile `5` is drawn with a soft accent fill to distinguish it from normal floor.
+- Primary: localStorage
+- Optional mirror: IndexedDB (future)
+- Cloud sync: out of scope for v1.3
 
----
+Offline-first rule:
+- Always write locally
+- Never block gameplay on sync
 
-## 6. Level Progression & UI
+### 3.3 Entry Flow
 
-### 6.1 Progression
-
-- Dot collection:
-  - `updateDots()` removes dots at the player’s tile and increments score.
-  - When `dots.size === 0`:
-    - If more levels remain:
-      - `loadLevel(currentLevelIndex + 1, { resetScore: false, showIntro: true })`.
-    - Else:
-      - `gameState = STATE.WIN`.
-
-- Starting / restarting:
-  - `startGame()` calls `loadLevel(0, { resetScore: true, showIntro: true })`.
-  - Space / Start button when in `TITLE`, `GAMEOVER`, or `WIN` triggers `startGame()`.
-
-### 6.2 HUD
-
-- DOM elements:
-  - `#score` – score text.
-  - `#level` – level display (`Level: X / N`).
-  - `#status` – state message.
-
-- `updateUI()`:
-  - Updates `score`, `status`, and `level` text.
-
-### 6.3 Overlays
-
-- `drawOverlay(text, color)` draws a centered overlay with a title and helper text.
-- `draw()` chooses overlay based on:
-  - `levelIntroTimer > 0` → show level intro (`"Level X: Name"`).
-  - Else, if:
-    - `STATE.TITLE` → `"Unicorn Run"`.
-    - `STATE.GAMEOVER` → `"Game Over"`.
-    - `STATE.WIN` → `"You Win!"`.
-
-The game loop decrements `levelIntroTimer` and **freezes gameplay updates** while it is positive, so level intros act like short pauses.
+1. Game ends (win or game over)
+2. Score qualifies for top N
+3. Transition to ENTER_HIGH_SCORE
+4. Capture name (keyboard or touch UI)
+5. Persist score
+6. Show high-score table
 
 ---
 
-## 7. Testing Notes (Desktop)
+## 4. PWA Foundation
 
-Suggested manual checks:
+### 4.1 Requirements
 
-1. Level 1 (Classic)\n   - Plays like v1.1: movement, gem logic, unicorn chase, portals.\n2. Level transitions\n   - Collect all dots on Level 1 → Level 2 intro overlay appears and new maze loads.\n   - Repeat to reach Level 3, then WIN on final completion.\n3. Bridges\n   - Player/unicorn can walk over bridge tiles.\n   - Dots appear on bridges and are collectible.\n4. Switches\n   - Player entry toggles the switch’s orientation.\n   - Exits along forbidden axes are blocked for both player and unicorn.\n   - Unicorn does not toggle switches.\n5. HUD & overlays\n   - Level display updates (`Level: X / 3`).\n   - Appropriate messages for title, game over, win, and level intros.\n\nMobile behavior should remain roughly as in v1.1 (joysticks visible on small screens), but v1.2 focuses primarily on desktop correctness.\n*** End Patch```} ***!
+- Installable via browser
+- Full-screen mode
+- Forced landscape orientation (mobile)
+- Offline playable
 
+### 4.2 Service Worker Scope
+
+Cache:
+- HTML
+- CSS
+- JS
+- Image assets
+
+Do not cache:
+- Dynamic score data
+- Remote APIs
+
+Failure rule:
+- If service worker fails, game runs as normal web app
+
+---
+
+## 5. Lives System
+
+### 5.1 Rules
+
+- Start with lives = 3
+- On player death:
+  - Decrement lives
+  - Reset positions
+  - Preserve score and level
+- If lives reach 0:
+  - Transition to GAME_OVER
+
+### 5.2 Extra Lives
+
+- Award 1 extra life every X points (e.g. 1000)
+- Optional life cap (default: none)
+
+No health bars or damage states in v1.3.
+
+---
+
+## 6. Unicorn Factory
+
+### 6.1 Purpose
+
+Unicorn behavior must be:
+- Data-driven
+- Predictable
+- Extensible
+
+### 6.2 Unicorn Definition Schema
+
+```js
+{
+  id: "drunky",
+  name: "Drunk-y",
+  color: "#48CAE4",
+  movement: {
+    baseSpeed: 1.0,
+    speedVariance: 0.3,
+    turnDelayChance: 0.2
+  },
+  behavior: {
+    chaseBias: 0.6,
+    randomBias: 0.4,
+    tunnelAwareness: false
+  },
+  invincibleResponse: "flee"
+}
+```
+
+### 6.3 Core Unicorn Types
+
+- classic — predictable chase logic
+- drunky — random, delayed, chaotic
+
+Unicorn count per level is controlled by level config.
+
+---
+
+## 7. Multiple Unicorns per Maze
+
+### 7.1 Collision Rules
+
+- Unicorns do not collide with each other
+- Unicorns ignore each other entirely
+- All share player collision and tunnel rules
+
+### 7.2 Spawn Rules
+
+- Each unicorn has a unique spawn tile
+- Spawn tiles must not overlap
+- Maze factory validates spawn safety
+
+---
+
+## 8. True Over / Under Tunnel Logic
+
+### 8.1 Core Concept
+
+Tiles may exist on layers:
+- layer = 0 (ground)
+- layer = 1 (bridge)
+
+Entities occupy exactly one layer at a time.
+
+### 8.2 Tile Metadata Extension
+
+```js
+{
+  row,
+  col,
+  tile,
+  layer,
+  allows: ["up", "down"]
+}
+```
+
+### 8.3 Movement Rules
+
+- An entity may only move onto tiles that exist on the **same layer**.
+- **Tunnel entrances** explicitly change the entity’s layer (e.g. ground → underpass).
+- **Layer changes are only allowed at designated tunnel tiles.**
+
+- **Teleportation is allowed only for world-wrapping purposes**, such as:
+  - Left ↔ right screen edges
+  - Explicit portals defined by the maze
+
+- Teleportation:
+  - Does **not** change the entity’s layer
+  - Must preserve the current layer
+  - Must not be used to bypass over/under tunnel logic
+
+In short:
+- **Tunnels change layers**
+- **Teleports change position**
+- **No mechanic may substitute for the other**
+
+---
+
+## 9. Tutorial Path
+
+### 9.1 Design Rules
+
+Tutorial levels are normal levels with flags:
+
+```js
+{
+  tutorial: true,
+  allowSkip: true
+}
+```
+
+- Each tutorial introduces exactly one mechanic
+- Fail states are forgiving
+
+### 9.2 Suggested Tutorial Order
+
+1. Movement & walls
+2. Dots & scoring
+3. Unicorn avoidance
+4. Gems & invincibility
+5. Bridges & tunnels
+6. Switches
+
+---
+
+## 10. Maze Factory (v1.3 Notes)
+
+Responsibilities:
+- Select template
+- Assign layers
+- Validate spawns
+- Seed dots
+- Attach unicorn count
+
+Deferred:
+- Procedural generation
+- User-authored mazes
+
+---
+
+## 11. Input Considerations
+
+### 11.1 Name Entry
+
+Desktop:
+- Arrow keys / WASD
+- Enter to confirm
+
+Mobile:
+- On-screen letter selector
+- Large touch targets
+- No system keyboard required
+
+---
+
+## 12. Testing Checklist
+
+- Offline play works
+- High scores persist after reload
+- Lives decrement correctly
+- Multiple unicorns behave independently
+- Tunnels respect layers
+- Tutorial can be skipped
+- Mobile landscape lock works
+- Desktop still playable
+
+---
+
+## 13. Non-Goals
+
+The following must not appear in v1.3:
+- Online accounts
+- Multiplayer
+- Full 3D camera
+- Physics-based movement
+- Maze uploads
+
+---
+
+## 14. Guiding Rule
+
+If a feature cannot be explained to an 8-year-old,
+it probably does not belong in v1.3.

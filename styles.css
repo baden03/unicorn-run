@@ -53,6 +53,12 @@ body {
   color: #6179a6;
 }
 
+.hud-lives {
+  font-size: 14px;
+  color: #ff4d6d;
+  font-weight: 600;
+}
+
 .hud-status {
   font-size: 16px;
   color: #40557a;
