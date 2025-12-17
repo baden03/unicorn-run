@@ -30,5 +30,17 @@ export const STATE = {
   PAUSED: "paused",
   GAMEOVER: "gameover",
   WIN: "win",
+  TUTORIAL: "tutorial", // v1.3
+  ENTER_HIGH_SCORE: "enter_high_score", // v1.3
+  SHOW_HIGH_SCORES: "show_high_scores", // v1.3
 };
+
+// v1.3: Lives system
+export const INITIAL_LIVES = 3;
+export const EXTRA_LIFE_SCORE_MILESTONE = 1000;
+
+// v1.3: High score system
+export const HIGH_SCORE_STORAGE_KEY = "unicornRun_highScores";
+export const HIGH_SCORE_SCHEMA_VERSION = 1;
+export const MAX_HIGH_SCORES = 10;
 

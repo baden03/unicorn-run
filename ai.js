@@ -1,8 +1,9 @@
-// v1.2.1 - Unicorn AI logic
+// v1.3.0 - Unicorn AI logic
 
-import { TILE, RANDOM_INTERSECTION_COUNT, STATE, DEBUG_UNICORN } from './config.js';
+import { TILE, RANDOM_INTERSECTION_COUNT, STATE, DEBUG_UNICORN, UNICORN_SPEED } from './config.js';
 import { pixelToGrid, gridToPixel, blocked, tileAt } from './utils.js';
 import { applyPortal } from './movement.js';
+import { UNICORN_DEFINITIONS } from './entities.js';
 
 // Helper function to immediately choose a direction that moves away from player
 export function chooseAvoidDirection(unicorn, player, maze) {
@@ -71,6 +72,8 @@ export function chooseAvoidDirection(unicorn, player, maze) {
 }
 
 export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLeftRef, getSwitchAt) {
+  const def = unicorn.definition || UNICORN_DEFINITIONS.classic;
+  
   const at = pixelToGrid(unicorn.x, unicorn.y);
   const center = gridToPixel(at.col, at.row);
   // Only make decisions when centered on a tile
@@ -99,6 +102,10 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
   const isIntersection = validNonReverse.length >= 2; // 3-way or 4-way
   const isCorner = validNonReverse.length === 1 && valid.length >= 2 && !(valid[0].x === -valid[1].x && valid[0].y === -valid[1].y);
 
+  // v1.3: Apply turn delay chance from definition
+  const shouldDelay = Math.random() < def.movement.turnDelayChance;
+  if (shouldDelay && !isIntersection && !isCorner) return false;
+
   // If we're not at an intersection/corner and not in random mode, keep current direction
   if (randomStepsLeftRef.value <= 0 && !isIntersection && !isCorner) return false;
 
@@ -123,17 +130,34 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
 
   // Mode: chase (normal) vs avoid (player invincible)
   const chaseMode = gameState !== STATE.PLAYING_INVINCIBLE;
-  const primary = chaseMode
-    ? (distX > distY
-        ? [{ x: Math.sign(dx), y: 0 }, { x: 0, y: Math.sign(dy) }]
-        : [{ x: 0, y: Math.sign(dy) }, { x: Math.sign(dx), y: 0 }])
-    : (distX > distY
-        ? [{ x: -Math.sign(dx), y: 0 }, { x: 0, y: -Math.sign(dy) }]
-        : [{ x: 0, y: -Math.sign(dy) }, { x: -Math.sign(dx), y: 0 }]);
+  
+  // v1.3: Apply chase/random bias from definition
+  const behaviorBias = chaseMode ? def.behavior.chaseBias : (1 - def.behavior.chaseBias); // Invert bias for flee
+  const randomChance = def.behavior.randomBias;
+  
+  if (Math.random() < randomChance) {
+    // Random movement
+    const pick = valid[Math.floor(Math.random() * valid.length)];
+    if (pick) {
+      unicorn.dirX = pick.x;
+      unicorn.dirY = pick.y;
+      if (DEBUG_UNICORN) console.log("Unicorn choose", { dir: pick, reason: "random" });
+      return true;
+    }
+  } else if (Math.random() < behaviorBias) {
+    // Chase/flee logic
+    const primary = chaseMode
+      ? (distX > distY
+          ? [{ x: Math.sign(dx), y: 0 }, { x: 0, y: Math.sign(dy) }]
+          : [{ x: 0, y: Math.sign(dy) }, { x: Math.sign(dx), y: 0 }])
+      : (distX > distY
+          ? [{ x: -Math.sign(dx), y: 0 }, { x: 0, y: -Math.sign(dy) }]
+          : [{ x: 0, y: -Math.sign(dy) }, { x: -Math.sign(dx), y: 0 }]);
 
-  if (chooseDir(primary)) {
-    if (DEBUG_UNICORN) console.log("Unicorn choose", { dir: { x: unicorn.dirX, y: unicorn.dirY }, reason: chaseMode ? "greedy" : "avoid" });
-    return true;
+    if (chooseDir(primary)) {
+      if (DEBUG_UNICORN) console.log("Unicorn choose", { dir: { x: unicorn.dirX, y: unicorn.dirY }, reason: chaseMode ? "greedy" : "avoid" });
+      return true;
+    }
   }
 
   // Fallback: any valid non-reverse, else any valid
@@ -160,6 +184,13 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
   const prevY = unicorn.y;
 
   chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLeftRef, getSwitchAt);
+  
+  // v1.3: Apply speed variance from definition
+  const def = unicorn.definition || UNICORN_DEFINITIONS.classic;
+  const baseSpeed = UNICORN_SPEED * def.movement.baseSpeed;
+  const speedVar = baseSpeed * def.movement.speedVariance;
+  const currentSpeed = baseSpeed + (Math.random() * speedVar * 2 - speedVar);
+  unicorn.speed = currentSpeed;
 
   // Early look-ahead for special tiles (bridges/switches):
   // If the unicorn is heading directly into a blocked side of one of these,
@@ -199,8 +230,8 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
     }
   }
 
-  let moveX = unicorn.dirX * unicorn.speed * dt;
-  let moveY = unicorn.dirY * unicorn.speed * dt;
+  let moveX = unicorn.dirX * currentSpeed * dt;
+  let moveY = unicorn.dirY * currentSpeed * dt;
 
   // Bridges & switches: unicorn must respect the same directional blocks as the player
   const currentTile = pixelToGrid(unicorn.x, unicorn.y);

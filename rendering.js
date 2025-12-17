@@ -1,7 +1,8 @@
-// v1.2.1 - Rendering functions
+// v1.3.0 - Rendering functions
 
 import { TILE, CANVAS_W, CANVAS_H, STATE, DEBUG_PORTALS, DEBUG_BRIDGES, DEBUG_SWITCHES } from './config.js';
 import { gridToPixel, tileAt } from './utils.js';
+import { UNICORN_DEFINITIONS } from './entities.js';
 
 export function drawMaze(ctx, maze, portals, switches, getSwitchAt) {
   ctx.fillStyle = "#f7f9ff";
