@@ -67,7 +67,10 @@ export const rectanglesOverlap = (a, b) =>
 // Wall collision check (requires maze to be passed in)
 // v1.3: Layer-aware - only tiles that exist on the entity's layer can block
 // Walls block all layers, but bridges/floor only block layer 2, tunnels only block layer 1
-export const blocked = (maze, x, y, w, h, layer = 2, targetLayer = null) => {
+// v1.3: Switch blocking - switches block like walls based on their mode and movement direction
+// moveDirX and moveDirY indicate the movement direction (0 = not moving in that axis, non-zero = moving)
+// getSwitchAt is optional function to get switch info at a position
+export const blocked = (maze, x, y, w, h, layer = 2, targetLayer = null, moveDirX = 0, moveDirY = 0, getSwitchAt = null) => {
   const corners = [
     { x: x - w / 2, y: y - h / 2 },
     { x: x + w / 2, y: y - h / 2 },
@@ -80,6 +83,22 @@ export const blocked = (maze, x, y, w, h, layer = 2, targetLayer = null) => {
     
     // Walls always block regardless of layer
     if (tile === 1) return true;
+    
+    // Switches block like walls based on their mode and movement direction
+    // Vertical switch blocks horizontal movement, horizontal switch blocks vertical movement
+    if (tile === 7 && getSwitchAt) {
+      const sw = getSwitchAt(row, col);
+      if (sw) {
+        // Vertical switch blocks horizontal movement (moveDirX !== 0)
+        if (sw.mode === "vertical" && moveDirX !== 0) {
+          return true; // Blocked by vertical switch
+        }
+        // Horizontal switch blocks vertical movement (moveDirY !== 0)
+        if (sw.mode === "horizontal" && moveDirY !== 0) {
+          return true; // Blocked by horizontal switch
+        }
+      }
+    }
     
     // Special case: Bridges (tile 6) don't block entities on layer 1 (tunnel layer)
     // Entities on layer 1 can pass under bridges

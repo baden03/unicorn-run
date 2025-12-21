@@ -21,6 +21,36 @@ export const MAZE_DEBUG_9x9 = [
   [1,1,1,1,1,1,1,1,1,1,1],
 ];
 
+// Switches debug maze: 11x11 test maze with switches
+export const MAZE_DEBUG_SWITCHES = [
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,0,1,0,1,0,1,0,1],
+  [5,0,0,0,0,0,0,0,0,0,5],  // Row 3: wrap portals
+  [1,0,1,0,7,0,7,0,1,0,1],  // Row 4: switches at (4,4) and (4,6)
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,0,7,0,7,0,1,0,1],  // Row 6: switches at (6,4) and (6,6)
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,0,1,0,1,0,1,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1],
+];
+
+// Unicorn AI debug maze: 11x11 test maze with unicorn
+export const MAZE_DEBUG_UNICORN_AI = [
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,0,1,0,1,0,1,0,1],
+  [5,0,0,0,0,0,0,0,0,0,5],  // Row 3: wrap portals
+  [1,0,1,0,1,0,1,0,1,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,0,1,0,1,0,1,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,0,1,0,1,0,1,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1],
+];
+
 // Maze templates: 0 floor, 1 wall, 5 portal; 6 bridge, 7 switch (v1.2)
 export const MAZE_CLASSIC = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
@@ -78,7 +108,8 @@ export const MAZE_CLASSIC_ALT_2 = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
 ];
 
-// Bridges level: derive from classic and add several 4-way bridges with side portals
+// Bridges level: derive from classic and add several 4-way bridges with tunnels
+// v1.3: Uses new layer-based bridge/tunnel system
 export const MAZE_BRIDGES = (() => {
   const base = MAZE_CLASSIC.map((row) => row.slice());
 
@@ -98,14 +129,35 @@ export const MAZE_BRIDGES = (() => {
   }
 
   // Use up to three 4-way intersections for bridges
+  // Alternate between vertical and horizontal bridges
   for (let i = 0; i < fourWays.length && i < 3; i++) {
     const { row, col } = fourWays[i];
+    const isVertical = i % 2 === 0; // Alternate: first vertical, second horizontal, third vertical
+    
     // Bridge tile itself
     base[row][col] = 6;
-    // Block the horizontal surface path with portals that tunnel under the bridge
-    base[row][col - 1] = 5;
-    base[row][col + 1] = 5;
-    // Vertical neighbors remain floor (straight crossing over the bridge)
+    
+    if (isVertical) {
+      // Vertical bridge: tunnels on left and right
+      // Check if left and right are floor tiles (safe to convert to tunnel)
+      if (base[row][col - 1] === 0) {
+        base[row][col - 1] = 8; // Tunnel path (layer 1)
+      }
+      if (base[row][col + 1] === 0) {
+        base[row][col + 1] = 8; // Tunnel path (layer 1)
+      }
+      // Top and bottom remain floor (straight crossing over the bridge on layer 2)
+    } else {
+      // Horizontal bridge: tunnels on top and bottom
+      // Check if top and bottom are floor tiles (safe to convert to tunnel)
+      if (base[row - 1][col] === 0) {
+        base[row - 1][col] = 8; // Tunnel path (layer 1)
+      }
+      if (base[row + 1][col] === 0) {
+        base[row + 1][col] = 8; // Tunnel path (layer 1)
+      }
+      // Left and right remain floor (straight crossing over the bridge on layer 2)
+    }
   }
 
   return base;
@@ -205,24 +257,10 @@ export function buildPortalsFromMaze(sourceMaze) {
     }
   }
 
-  // 2) Bridge tunnels: for each row, look for 5,6,5 patterns and pair the 5s.
-  for (let r = 0; r < mazeRows; r++) {
-    for (let c = 1; c < mazeCols - 2; c++) {
-      if (sourceMaze[r][c] === 5 &&
-          sourceMaze[r][c + 1] === 6 &&
-          sourceMaze[r][c + 2] === 5 &&
-          !used.has(key(r, c)) &&
-          !used.has(key(r, c + 2))) {
-        pairs.push({
-          a: { row: r, col: c },
-          b: { row: r, col: c + 2 },
-        });
-        used.add(key(r, c));
-        used.add(key(r, c + 2));
-        c += 2; // skip over this bridge pair
-      }
-    }
-  }
+  // 2) Bridge tunnels: v1.3 - No longer needed!
+  // The new layer-based system uses tunnel tiles (8) instead of portals (5) for bridges.
+  // Tunnel tiles allow automatic layer transitions, so no portal pairing is needed.
+  // Entities automatically transition between layers when moving onto/off tunnel tiles.
 
   return pairs;
 }
@@ -246,16 +284,30 @@ export function buildSwitchesFromMaze(sourceMaze) {
 export function createMazeForLevel(levelConfig) {
   // Check for movement debug mode
   if (MOVEMENT_DEBUG) {
-    const newMaze = MAZE_DEBUG_9x9.map((row) => row.slice());
+    let newMaze;
+    let newSwitches = [];
+    
+    if (MOVEMENT_DEBUG === "bridges") {
+      // Bridges debug: test maze with bridges and tunnels
+      newMaze = MAZE_DEBUG_9x9.map((row) => row.slice());
+    } else if (MOVEMENT_DEBUG === "switches") {
+      // Switches debug: test maze with switches
+      newMaze = MAZE_DEBUG_SWITCHES.map((row) => row.slice());
+      newSwitches = buildSwitchesFromMaze(newMaze);
+    } else if (MOVEMENT_DEBUG === "unicorn_ai") {
+      // Unicorn AI debug: test maze with unicorn
+      newMaze = MAZE_DEBUG_UNICORN_AI.map((row) => row.slice());
+    } else {
+      // Default to bridges debug
+      newMaze = MAZE_DEBUG_9x9.map((row) => row.slice());
+    }
+    
     const newPortals = buildPortalsFromMaze(newMaze);
-    const newSwitches = []; // No switches in debug mode
-
-    // Spawn positions for debug mode
     const spawns = {
       player: { row: 1, col: 1 },
-      // No unicorn spawn in debug mode
+      // Unicorn spawn only in unicorn_ai debug mode
+      unicorn: MOVEMENT_DEBUG === "unicorn_ai" ? { row: 5, col: 5 } : undefined,
     };
-
     return { maze: newMaze, portals: newPortals, switches: newSwitches, spawns };
   }
 

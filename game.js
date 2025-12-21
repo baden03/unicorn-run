@@ -85,17 +85,19 @@ function loadLevel(index, options = {}) {
   
   const entities = resetEntities(spawns);
   player = entities.player;
-  // Skip unicorn initialization in debug mode
-  if (!MOVEMENT_DEBUG) {
+  // Unicorn initialization: only skip in bridges debug mode
+  if (MOVEMENT_DEBUG === "bridges" || MOVEMENT_DEBUG === "switches") {
+    unicorn = null;
+  } else if (MOVEMENT_DEBUG === "unicorn_ai") {
     unicorn = entities.unicorn;
   } else {
-    unicorn = null;
+    unicorn = entities.unicorn;
   }
   
   dots = seedDotsFromMaze(maze, level, spawns);
   gemCooldown = 0;
-  // Skip gem placement in debug mode
-  if (!MOVEMENT_DEBUG) {
+  // Skip gem placement in bridges and switches debug modes
+  if (MOVEMENT_DEBUG !== "bridges" && MOVEMENT_DEBUG !== "switches") {
     const newGem = placeGem(dots);
     if (newGem) {
       gem = newGem;
@@ -104,7 +106,7 @@ function loadLevel(index, options = {}) {
   
   if (resetScore) score = 0;
   
-  // Skip intro in debug mode
+  // Skip intro in debug modes
   if (showIntro && !MOVEMENT_DEBUG) {
     const intro = showLevelIntro(currentLevelIndex);
     levelIntroText = intro.text;
@@ -214,6 +216,7 @@ function updateDebugHUD() {
   const bridgeTunnelEl = document.getElementById("debugBridgeTunnel");
   const collisionCornersEl = document.getElementById("debugCollisionCorners");
   const movementStartEl = document.getElementById("debugMovementStart");
+  const switchDebugEl = document.getElementById("debugSwitch");
   
   if (playerPosEl) {
     playerPosEl.innerHTML = `Pixel: (${player.x.toFixed(1)}, ${player.y.toFixed(1)})<br>Grid: (${grid.row}, ${grid.col})`;
@@ -320,7 +323,31 @@ function updateDebugHUD() {
       cornerInfo += `Target Tile: ${futureCode} [${tileNames[futureCode] || "Wall"}]<br>`;
       cornerInfo += `Target Layer: ${futureTargetLayer}<br>`;
       const wouldBlock = blocked(maze, futureX, futureY, player.w, player.h, player.layer, futureTargetLayer);
-      cornerInfo += `Would Block: ${wouldBlock}<br>`;
+      cornerInfo += `Would Block (wall): ${wouldBlock}<br>`;
+      
+      // Check switch blocking
+      let switchWouldBlock = false;
+      let switchBlockReason = "";
+      if (futureCode === 7) {
+        const sw = getSwitchAt(futureTile.row, futureTile.col);
+        if (sw) {
+          switchBlockReason = `Switch mode=${sw.mode}`;
+          if (sw.mode === "vertical" && player.desiredX !== 0) {
+            switchWouldBlock = true;
+            switchBlockReason += ` blocks horizontal (desiredX=${player.desiredX})`;
+          } else if (sw.mode === "horizontal" && player.desiredY !== 0) {
+            switchWouldBlock = true;
+            switchBlockReason += ` blocks vertical (desiredY=${player.desiredY})`;
+          } else {
+            switchBlockReason += ` does not block (desired=(${player.desiredX},${player.desiredY}))`;
+          }
+        }
+      }
+      if (futureCode === 7) {
+        cornerInfo += `Switch blocking: ${switchBlockReason}<br>`;
+        cornerInfo += `Would Block (switch): ${switchWouldBlock}<br>`;
+        cornerInfo += `Final Would Block: ${wouldBlock || switchWouldBlock}<br>`;
+      }
       
       // Check each corner of the future position
       const futureCorners = [
@@ -342,6 +369,66 @@ function updateDebugHUD() {
     }
     
     collisionCornersEl.innerHTML = cornerInfo;
+  }
+  
+  // Turn logic debug
+  if (movementStartEl) {
+    const center = gridToPixel(grid.col, grid.row);
+    const turnSnap = TILE * 0.3;
+    const nearCenter = Math.abs(player.x - center.x) < turnSnap && Math.abs(player.y - center.y) < turnSnap;
+    const wantsTurn = (player.desiredX !== player.dirX || player.desiredY !== player.dirY);
+    
+    if (nearCenter && (player.desiredX !== 0 || player.desiredY !== 0) && wantsTurn && (player.dirX !== 0 || player.dirY !== 0)) {
+      let turnInfo = `<strong>Turn Attempt:</strong><br>`;
+      turnInfo += `Currently moving: ${dirStr(player.dirX, player.dirY)}<br>`;
+      turnInfo += `Desired direction: ${dirStr(player.desiredX, player.desiredY)}<br>`;
+      turnInfo += `Current tile: ${currentTileCode} [${tileNames[currentTileCode] || "Unknown"}]<br>`;
+      
+      const testX = center.x + player.desiredX * TILE * 0.4;
+      const testY = center.y + player.desiredY * TILE * 0.4;
+      const testTile = pixelToGrid(testX, testY);
+      const testCode = tileAt(maze, testTile.row, testTile.col);
+      let testTargetLayer = player.layer;
+      if (player.layer === 2 && testCode === 8) testTargetLayer = 1;
+      else if (player.layer === 1 && testCode === 0) testTargetLayer = 2;
+      
+      turnInfo += `Test position: (${testTile.row},${testTile.col}) tile=${testCode}<br>`;
+      
+      // Check switch blocking
+      let switchWouldBlock = false;
+      let switchBlockReason = "";
+      if (testCode === 7) {
+        const sw = getSwitchAt(testTile.row, testTile.col);
+        if (sw) {
+          switchBlockReason = `Switch at (${testTile.row},${testTile.col}) mode=${sw.mode}`;
+          if (sw.mode === "vertical" && player.desiredX !== 0) {
+            switchWouldBlock = true;
+            switchBlockReason += ` blocks horizontal movement`;
+          } else if (sw.mode === "horizontal" && player.desiredY !== 0) {
+            switchWouldBlock = true;
+            switchBlockReason += ` blocks vertical movement`;
+          } else {
+            switchBlockReason += ` does not block (mode=${sw.mode}, desired=(${player.desiredX},${player.desiredY}))`;
+          }
+          turnInfo += `Switch blocking: ${switchBlockReason}<br>`;
+          turnInfo += `Switch would block: ${switchWouldBlock}<br>`;
+        }
+      }
+      
+      const testBlocked = blocked(maze, testX, testY, player.w, player.h, player.layer, testTargetLayer);
+      turnInfo += `Test blocked (wall): ${testBlocked}<br>`;
+      turnInfo += `Turn allowed: ${!testBlocked && !switchWouldBlock}<br>`;
+      turnInfo += `Current dirX: ${player.dirX}, dirY: ${player.dirY}<br>`;
+      turnInfo += `Would set dirX to: ${player.desiredX}, dirY to: ${player.desiredY}<br>`;
+      
+      if (switchWouldBlock) {
+        turnInfo += `→ Switch blocking prevented turn<br>`;
+        turnInfo += `→ Player should continue in current direction: ${dirStr(player.dirX, player.dirY)}<br>`;
+      }
+      
+      movementStartEl.innerHTML = turnInfo;
+      return; // Don't show movement start info if we're showing turn info
+    }
   }
   
   // Movement start debug
@@ -376,9 +463,35 @@ function updateDebugHUD() {
       if (player.layer === 2 && testCode === 8) testTargetLayer = 1;
       else if (player.layer === 1 && testCode === 0) testTargetLayer = 2;
       const testBlocked = blocked(maze, testX, testY, player.w, player.h, player.layer, testTargetLayer);
+      
+      // Check switch blocking
+      let switchWouldBlock = false;
+      let switchBlockReason = "";
+      if (testCode === 7) {
+        const sw = getSwitchAt(testTile.row, testTile.col);
+        if (sw) {
+          switchBlockReason = `Switch at (${testTile.row},${testTile.col}) mode=${sw.mode}`;
+          if (sw.mode === "vertical" && player.desiredX !== 0) {
+            switchWouldBlock = true;
+            switchBlockReason += ` blocks horizontal movement`;
+          } else if (sw.mode === "horizontal" && player.desiredY !== 0) {
+            switchWouldBlock = true;
+            switchBlockReason += ` blocks vertical movement`;
+          } else {
+            switchBlockReason += ` does not block (mode=${sw.mode}, desired=(${player.desiredX},${player.desiredY}))`;
+          }
+        } else {
+          switchBlockReason = `Switch tile but no switch object found`;
+        }
+      }
+      
       startInfo += `Test position: (${testTile.row},${testTile.col}) tile=${testCode}<br>`;
       startInfo += `Test target layer: ${testTargetLayer}<br>`;
       startInfo += `Test blocked: ${testBlocked}<br>`;
+      if (testCode === 7) {
+        startInfo += `Switch blocking check: ${switchBlockReason}<br>`;
+        startInfo += `Switch would block: ${switchWouldBlock}<br>`;
+      }
       startInfo += `<br><strong>After checks:</strong><br>`;
       // Calculate canStart properly
       let calculatedCanStart = true;
@@ -387,9 +500,15 @@ function updateDebugHUD() {
         if (hasVerticalPath && !hasHorizontalPath && player.desiredX !== 0) calculatedCanStart = false;
       }
       startInfo += `canStart calculated: ${calculatedCanStart}<br>`;
-      startInfo += `Final canStart: ${calculatedCanStart && !testBlocked}<br>`;
+      startInfo += `Final canStart: ${calculatedCanStart && !testBlocked && !switchWouldBlock}<br>`;
+      if (switchWouldBlock) {
+        startInfo += `→ Switch blocking prevented movement start<br>`;
+      }
       startInfo += `Current dirX: ${player.dirX}, dirY: ${player.dirY}<br>`;
       startInfo += `Would set dirX to: ${player.desiredX}, dirY to: ${player.desiredY}<br>`;
+      startInfo += `<br><strong>Actual Result:</strong><br>`;
+      startInfo += `dirX after check: ${player.dirX}, dirY after check: ${player.dirY}<br>`;
+      startInfo += `Movement started: ${(player.dirX !== 0 || player.dirY !== 0) ? 'Yes' : 'No'}<br>`;
       
       // Also check what happens during actual movement
       if (calculatedCanStart && !testBlocked) {
@@ -443,6 +562,153 @@ function updateDebugHUD() {
     moveInfo += `Would block X: ${wouldBlockX}<br>`;
     moveInfo += `Would block Y: ${wouldBlockY}<br>`;
     movementStartEl.innerHTML = moveInfo;
+  }
+  
+  // Switch debug info
+  if (switchDebugEl) {
+    let switchInfo = "";
+    
+    // Check if player is on a switch
+    const currentSwitch = getSwitchAt(grid.row, grid.col);
+    if (currentSwitch) {
+      switchInfo += `<strong>On Switch:</strong><br>`;
+      switchInfo += `Position: (${currentSwitch.row},${currentSwitch.col})<br>`;
+      switchInfo += `Mode: ${currentSwitch.mode}<br>`;
+      switchInfo += `Pending: ${currentSwitch.pending ? 'Yes' : 'No'}<br>`;
+      if (currentSwitch.pending) {
+        switchInfo += `Timer: ${currentSwitch.timer.toFixed(2)}s<br>`;
+        switchInfo += `Next Mode: ${currentSwitch.mode === "vertical" ? "horizontal" : "vertical"}<br>`;
+      }
+      switchInfo += `<br>`;
+      
+      // Show which walls are blocked
+      if (currentSwitch.mode === "vertical") {
+        switchInfo += `<strong>Blocked Walls:</strong><br>`;
+        switchInfo += `Left: BLOCKED<br>`;
+        switchInfo += `Right: BLOCKED<br>`;
+        switchInfo += `Top: Open<br>`;
+        switchInfo += `Bottom: Open<br>`;
+      } else {
+        switchInfo += `<strong>Blocked Walls:</strong><br>`;
+        switchInfo += `Left: Open<br>`;
+        switchInfo += `Right: Open<br>`;
+        switchInfo += `Top: BLOCKED<br>`;
+        switchInfo += `Bottom: BLOCKED<br>`;
+      }
+      switchInfo += `<br>`;
+      
+      // Show movement restrictions
+      switchInfo += `<strong>Movement Allowed:</strong><br>`;
+      if (currentSwitch.mode === "vertical") {
+        switchInfo += `Up/Down: ✓ Allowed<br>`;
+        switchInfo += `Left/Right: ✗ Blocked<br>`;
+      } else {
+        switchInfo += `Up/Down: ✗ Blocked<br>`;
+        switchInfo += `Left/Right: ✓ Allowed<br>`;
+      }
+    } else {
+      switchInfo += `Not on a switch<br>`;
+      
+      // Check if approaching a switch
+      if (player.dirX !== 0 || player.dirY !== 0) {
+        const futureX = player.x + (player.dirX * TILE);
+        const futureY = player.y + (player.dirY * TILE);
+        const futureGrid = pixelToGrid(futureX, futureY);
+        const futureSwitch = getSwitchAt(futureGrid.row, futureGrid.col);
+        if (futureSwitch) {
+          switchInfo += `<br><strong>Approaching Switch:</strong><br>`;
+          switchInfo += `Position: (${futureSwitch.row},${futureSwitch.col})<br>`;
+          switchInfo += `Mode: ${futureSwitch.mode}<br>`;
+          switchInfo += `Pending: ${futureSwitch.pending ? 'Yes' : 'No'}<br>`;
+          if (futureSwitch.pending) {
+            switchInfo += `Timer: ${futureSwitch.timer.toFixed(2)}s<br>`;
+          }
+          switchInfo += `<br>`;
+          
+          // Show if movement would be blocked
+          const wouldBlock = (futureSwitch.mode === "vertical" && player.dirX !== 0) ||
+                            (futureSwitch.mode === "horizontal" && player.dirY !== 0);
+          switchInfo += `Would Block: ${wouldBlock ? 'Yes' : 'No'}<br>`;
+        }
+      }
+    }
+    
+    // Show all switches in the maze
+    if (switches && switches.length > 0) {
+      switchInfo += `<br><strong>All Switches:</strong><br>`;
+      switches.forEach((sw, idx) => {
+        switchInfo += `${idx + 1}. (${sw.row},${sw.col}) `;
+        switchInfo += `mode=${sw.mode} `;
+        switchInfo += `pending=${sw.pending ? 'Y' : 'N'}`;
+        if (sw.pending) {
+          switchInfo += ` timer=${sw.timer.toFixed(1)}s`;
+        }
+        switchInfo += `<br>`;
+      });
+    }
+    
+    // Show what happens during movement update
+    if (player.dirX !== 0 || player.dirY !== 0) {
+      const moveX = player.dirX * player.speed * (1/60);
+      const moveY = player.dirY * player.speed * (1/60);
+      const futureTargetTile = pixelToGrid(player.x + moveX, player.y + moveY);
+      const futureTargetCode = tileAt(maze, futureTargetTile.row, futureTargetTile.col);
+      
+      switchInfo += `<br><strong>During Movement Update:</strong><br>`;
+      switchInfo += `Currently moving: (${player.dirX}, ${player.dirY})<br>`;
+      switchInfo += `Desired direction: (${player.desiredX}, ${player.desiredY})<br>`;
+      switchInfo += `Target tile: (${futureTargetTile.row},${futureTargetTile.col}) code=${futureTargetCode}<br>`;
+      
+      if (futureTargetCode === 7) {
+        const sw = getSwitchAt(futureTargetTile.row, futureTargetTile.col);
+        if (sw) {
+          switchInfo += `Switch mode: ${sw.mode}<br>`;
+          const wouldBlockX = (sw.mode === "vertical" && moveX !== 0);
+          const wouldBlockY = (sw.mode === "horizontal" && moveY !== 0);
+          switchInfo += `Would block X: ${wouldBlockX} (moveX=${moveX.toFixed(2)})<br>`;
+          switchInfo += `Would block Y: ${wouldBlockY} (moveY=${moveY.toFixed(2)})<br>`;
+          switchInfo += `Movement prevented: ${wouldBlockX || wouldBlockY}<br>`;
+          
+          // Show what happens to each axis
+          if (wouldBlockX) {
+            switchInfo += `→ X movement blocked: player.dirX will be set to 0<br>`;
+            switchInfo += `→ Player will ${moveY !== 0 ? 'continue' : 'stop'} moving in Y direction (${moveY !== 0 ? 'dirY=' + player.dirY : 'dirY=0'})<br>`;
+          }
+          if (wouldBlockY) {
+            switchInfo += `→ Y movement blocked: player.dirY will be set to 0<br>`;
+            switchInfo += `→ Player will ${moveX !== 0 ? 'continue' : 'stop'} moving in X direction (${moveX !== 0 ? 'dirX=' + player.dirX : 'dirX=0'})<br>`;
+          }
+          
+          // Show the key insight: if moving in a non-blocked direction, player should continue
+          if (sw.mode === "vertical") {
+            // Vertical switch blocks horizontal movement
+            if (moveX !== 0 && moveY === 0) {
+              switchInfo += `→ Player is moving horizontally, switch blocks horizontal → Player will STOP<br>`;
+            } else if (moveX === 0 && moveY !== 0) {
+              switchInfo += `→ Player is moving vertically, switch does NOT block vertical → Player will CONTINUE<br>`;
+            } else if (moveX !== 0 && moveY !== 0) {
+              switchInfo += `→ Player is moving diagonally, X blocked but Y not blocked → Player will continue in Y direction<br>`;
+            }
+          } else if (sw.mode === "horizontal") {
+            // Horizontal switch blocks vertical movement
+            if (moveY !== 0 && moveX === 0) {
+              switchInfo += `→ Player is moving vertically, switch blocks vertical → Player will STOP<br>`;
+            } else if (moveY === 0 && moveX !== 0) {
+              switchInfo += `→ Player is moving horizontally, switch does NOT block horizontal → Player will CONTINUE<br>`;
+            } else if (moveX !== 0 && moveY !== 0) {
+              switchInfo += `→ Player is moving diagonally, Y blocked but X not blocked → Player will continue in X direction<br>`;
+            }
+          }
+        }
+      }
+    } else {
+      switchInfo += `<br><strong>Player is stopped:</strong><br>`;
+      switchInfo += `Current direction: (${player.dirX}, ${player.dirY})<br>`;
+      switchInfo += `Desired direction: (${player.desiredX}, ${player.desiredY})<br>`;
+      switchInfo += `(Try to start moving logic is shown above in "Movement Start Check")<br>`;
+    }
+    
+    switchDebugEl.innerHTML = switchInfo;
   }
 }
 
@@ -695,10 +961,11 @@ function loop(timestamp) {
       }
     }
 
-    // Skip unicorn collision checks in debug mode
-    if (!MOVEMENT_DEBUG) {
+    // Skip unicorn collision checks in bridges and switches debug modes
+    if (MOVEMENT_DEBUG !== "bridges" && MOVEMENT_DEBUG !== "switches") {
       // No collision effects while unicorn is in respawn pause; it's effectively not there
-      if (unicornRespawnPause <= 0 && rectanglesOverlap(player, unicorn)) {
+      // Also check if player and unicorn are on the same layer - no collision if on different layers
+      if (unicornRespawnPause <= 0 && unicorn && player.layer === unicorn.layer && rectanglesOverlap(player, unicorn)) {
         if (gameState === STATE.PLAYING_INVINCIBLE) {
           // Tag unicorn once per invincibility window
           if (!unicornTagged) {

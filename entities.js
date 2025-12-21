@@ -39,7 +39,7 @@ export function createUnicornFromDefinition(definition, spawn) {
     dirX: -1,
     dirY: 0,
     speed: speed,
-    layer: 0, // v1.3: Layer system
+    layer: 2, // v1.3: Layer system - start on layer 2 (floor level)
     definition: def, // Store reference for behavior
     randomStepsLeft: 0,
     respawnPause: 0,

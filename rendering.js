@@ -369,14 +369,12 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
   drawMaze(ctx, maze, portals, switches, getSwitchAt);
   drawDots(ctx, dots);
   
-  // Skip gem, unicorn, trail, and stars in debug mode
-  if (!movementDebug) {
+  // Skip gem, unicorn, trail, and stars in bridges and switches debug modes
+  if (movementDebug !== "bridges" && movementDebug !== "switches") {
     drawGem(ctx, gem, gemCooldown);
     drawTrail(ctx, unicornTrail);
     drawStars(ctx, unicornStars);
-    if (unicorn) {
-      drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invincibleTimer);
-    }
+    // Unicorn will be drawn later (after player) to handle bridge hiding
   }
   
   drawFloatTexts(ctx, floatTexts);
@@ -385,9 +383,19 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
   // If so, draw player first, then draw bridge on top to hide them
   const playerGrid = pixelToGrid(player.x, player.y);
   const playerTile = tileAt(maze, playerGrid.row, playerGrid.col);
-  const isUnderBridge = player.layer === 1 && playerTile === 6;
+  const playerUnderBridge = player.layer === 1 && playerTile === 6;
   
-  if (!isUnderBridge) {
+  // Check if unicorn is on layer 1 (tunnel) and their position overlaps with a bridge
+  let unicornUnderBridge = false;
+  let unicornGrid = null;
+  if (unicorn && movementDebug !== "bridges" && movementDebug !== "switches") {
+    unicornGrid = pixelToGrid(unicorn.x, unicorn.y);
+    const unicornTile = tileAt(maze, unicornGrid.row, unicornGrid.col);
+    unicornUnderBridge = unicorn.layer === 1 && unicornTile === 6;
+  }
+  
+  // Draw player
+  if (!playerUnderBridge) {
     // Normal case: draw player on top
     drawPlayer(ctx, player);
   } else {
@@ -399,6 +407,24 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
     const dotId = `${playerGrid.row},${playerGrid.col}`;
     if (dots.has(dotId)) {
       drawDot(ctx, playerGrid.col, playerGrid.row);
+    }
+  }
+  
+  // Draw unicorn (if not in debug mode)
+  if (unicorn && !movementDebug) {
+    if (!unicornUnderBridge) {
+      // Normal case: draw unicorn on top
+      drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invincibleTimer);
+    } else {
+      // Unicorn is under a bridge: draw unicorn first, then bridge on top
+      drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invincibleTimer);
+      // Draw the bridge tile on top of the unicorn to hide them
+      drawBridgeTile(ctx, unicornGrid.col, unicornGrid.row, maze);
+      // Redraw the dot if there's one on this bridge tile
+      const dotId = `${unicornGrid.row},${unicornGrid.col}`;
+      if (dots.has(dotId)) {
+        drawDot(ctx, unicornGrid.col, unicornGrid.row);
+      }
     }
   }
 

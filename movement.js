@@ -183,7 +183,9 @@ export function updatePlayer(dt, player, maze, switches, portals, keys, joystick
         let testTargetLayer = player.layer;
         if (player.layer === 2 && testCode === 8) testTargetLayer = 1;
         else if (player.layer === 1 && testCode === 0) testTargetLayer = 2;
-        if (!blocked(maze, testX, testY, player.w, player.h, player.layer, testTargetLayer)) {
+        
+        // Switches now block like walls - handled inside blocked() function
+        if (!blocked(maze, testX, testY, player.w, player.h, player.layer, testTargetLayer, player.desiredX, player.desiredY, getSwitchAt)) {
           player.dirX = player.desiredX;
           player.dirY = player.desiredY;
         }
@@ -241,7 +243,21 @@ export function updatePlayer(dt, player, maze, switches, portals, keys, joystick
       else if (player.layer === 1 && testCode === 0) testTargetLayer = 2;
       // Bridges (tile 6) don't cause layer transitions - stay on current layer
       
-      if (!blocked(maze, testX, testY, player.w, player.h, player.layer, testTargetLayer)) {
+      // Check if switch would block this movement direction (like walls)
+      let switchWouldBlock = false;
+      if (testCode === 7) {
+        const sw = getSwitchAt(testTile.row, testTile.col);
+        if (sw) {
+          // If switch would block the desired movement direction, prevent starting movement
+          if (sw.mode === "vertical" && player.desiredX !== 0) {
+            switchWouldBlock = true; // Horizontal movement blocked by vertical switch
+          } else if (sw.mode === "horizontal" && player.desiredY !== 0) {
+            switchWouldBlock = true; // Vertical movement blocked by horizontal switch
+          }
+        }
+      }
+      
+      if (!blocked(maze, testX, testY, player.w, player.h, player.layer, testTargetLayer, player.desiredX, player.desiredY, getSwitchAt)) {
         player.dirX = player.desiredX;
         player.dirY = player.desiredY;
       }
@@ -378,27 +394,23 @@ export function updatePlayer(dt, player, maze, switches, portals, keys, joystick
     }
   }
 
-  // Approaching switches from outside: treat blocked sides like walls
-  if (targetCode === 7) {
-    const sw = getSwitchAt(targetTile.row, targetTile.col);
-    if (sw) {
-      if (sw.mode === "vertical" && moveX !== 0) {
-        moveX = 0;
-        player.dirX = 0;
-      } else if (sw.mode === "horizontal" && moveY !== 0) {
-        moveY = 0;
-        player.dirY = 0;
-      }
-    }
-  }
-  
   // Check collisions with layer awareness (use target layer for movement checks, allow transition)
-  if (!blocked(maze, player.x + moveX, player.y, player.w, player.h, player.layer, targetLayer)) player.x += moveX;
-  if (!blocked(maze, player.x, player.y + moveY, player.w, player.h, player.layer, targetLayer)) player.y += moveY;
+  // Switches now block like walls - handled inside blocked() function
+  const wouldBlockX = blocked(maze, player.x + moveX, player.y, player.w, player.h, player.layer, targetLayer, player.dirX, 0, getSwitchAt);
+  const wouldBlockY = blocked(maze, player.x, player.y + moveY, player.w, player.h, player.layer, targetLayer, 0, player.dirY, getSwitchAt);
+  
+  // Apply movement only if not blocked by walls or switches
+  if (!wouldBlockX) player.x += moveX;
+  if (!wouldBlockY) player.y += moveY;
 
   // Stop on collision but keep desired for next intersection
-  if (blocked(maze, player.x + moveX, player.y, player.w, player.h, player.layer, targetLayer)) player.dirX = 0;
-  if (blocked(maze, player.x, player.y + moveY, player.w, player.h, player.layer, targetLayer)) player.dirY = 0;
+  // Treat switches exactly like walls - zero direction in blocked axis
+  if (wouldBlockX) {
+    player.dirX = 0;
+  }
+  if (wouldBlockY) {
+    player.dirY = 0;
+  }
 
   applyPortal(player, maze, portals);
 

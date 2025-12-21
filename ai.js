@@ -6,7 +6,7 @@ import { applyPortal } from './movement.js';
 import { UNICORN_DEFINITIONS } from './entities.js';
 
 // Helper function to immediately choose a direction that moves away from player
-export function chooseAvoidDirection(unicorn, player, maze) {
+export function chooseAvoidDirection(unicorn, player, maze, getSwitchAt = null) {
   const dx = player.x - unicorn.x;
   const dy = player.y - unicorn.y;
   const allDirs = [
@@ -14,11 +14,16 @@ export function chooseAvoidDirection(unicorn, player, maze) {
     { x: 0, y: 1 }, { x: 0, y: -1 },
   ];
   
-  // Get all valid directions (not blocked by walls)
+  // Get all valid directions (not blocked by walls, layer-aware)
   const valid = allDirs.filter(dir => {
     const testX = unicorn.x + dir.x * TILE * 0.6;
     const testY = unicorn.y + dir.y * TILE * 0.6;
-    return !blocked(maze, testX, testY, unicorn.w, unicorn.h);
+    const testTile = pixelToGrid(testX, testY);
+    const testCode = tileAt(maze, testTile.row, testTile.col);
+    let testTargetLayer = unicorn.layer;
+    if (unicorn.layer === 2 && testCode === 8) testTargetLayer = 1;
+    else if (unicorn.layer === 1 && testCode === 0) testTargetLayer = 2;
+    return !blocked(maze, testX, testY, unicorn.w, unicorn.h, unicorn.layer, testTargetLayer, dir.x, dir.y, getSwitchAt);
   });
   
   if (valid.length === 0) return; // No valid directions
@@ -93,7 +98,12 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
   const valid = allDirs.filter(dir => {
     const testX = unicorn.x + dir.x * TILE * 0.6;
     const testY = unicorn.y + dir.y * TILE * 0.6;
-    return !blocked(maze, testX, testY, unicorn.w, unicorn.h);
+    const testTile = pixelToGrid(testX, testY);
+    const testCode = tileAt(maze, testTile.row, testTile.col);
+    let testTargetLayer = unicorn.layer;
+    if (unicorn.layer === 2 && testCode === 8) testTargetLayer = 1;
+    else if (unicorn.layer === 1 && testCode === 0) testTargetLayer = 2;
+    return !blocked(maze, testX, testY, unicorn.w, unicorn.h, unicorn.layer, testTargetLayer, dir.x, dir.y, getSwitchAt);
   });
 
   // Determine intersection/corner status (exclude pure forward/back corridor)
@@ -204,9 +214,14 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
 
     if (aheadCode === 6 || aheadCode === 7) {
       let willBeBlocked = false;
-      if (aheadCode === 6) {
-        // Bridge blocks horizontal travel along it
-        if (unicorn.dirX !== 0) willBeBlocked = true;
+      if (aheadCode === 6 && unicorn.layer === 2) {
+        // Bridge blocks movement (only on layer 2) - check orientation
+        const upTile = tileAt(maze, aheadTile.row - 1, aheadTile.col);
+        const downTile = tileAt(maze, aheadTile.row + 1, aheadTile.col);
+        const leftTile = tileAt(maze, aheadTile.row, aheadTile.col - 1);
+        const rightTile = tileAt(maze, aheadTile.row, aheadTile.col + 1);
+        const isVerticalBridge = (leftTile === 8 || rightTile === 8);
+        if (isVerticalBridge && unicorn.dirX !== 0) willBeBlocked = true;
       } else {
         const sw = getSwitchAt(aheadTile.row, aheadTile.col);
         if (sw) {
@@ -233,16 +248,44 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
   let moveX = unicorn.dirX * currentSpeed * dt;
   let moveY = unicorn.dirY * currentSpeed * dt;
 
+  // Determine target layer - check if we should transition before checking collisions
+  const targetTile = pixelToGrid(unicorn.x + moveX, unicorn.y + moveY);
+  const targetCode = tileAt(maze, targetTile.row, targetTile.col);
+  let targetLayer = unicorn.layer;
+  if (unicorn.layer === 2 && targetCode === 8) {
+    // Transitioning from floor (layer 2) to tunnel (layer 1)
+    targetLayer = 1;
+  } else if (unicorn.layer === 1 && targetCode === 0) {
+    // Transitioning from tunnel (layer 1) to floor (layer 2)
+    targetLayer = 2;
+  }
+  // Note: Bridges (tile 6) don't cause layer transitions
+  
+  // Update unicorn layer if transitioning
+  if (targetLayer !== unicorn.layer) {
+    unicorn.layer = targetLayer;
+  }
+
   // Bridges & switches: unicorn must respect the same directional blocks as the player
+  // BUT: Only apply bridge restrictions when on layer 2 (walking over bridge)
+  // On layer 1 (tunnel layer), bridges don't restrict movement (you pass under them)
   const currentTile = pixelToGrid(unicorn.x, unicorn.y);
   const currentCode = tileAt(maze, currentTile.row, currentTile.col);
-  // On a bridge, only allow vertical crossing (no horizontal movement along it)
-  // For the unicorn, we *only* cancel the movement component and keep its
-  // facing direction so that the "wall hit" logic below can correctly
-  // reverse and enter temporary random mode instead of leaving the unicorn
-  // directionless and stuck.
-  if (currentCode === 6 && moveX !== 0) {
-    moveX = 0;
+  
+  if (currentCode === 6 && unicorn.layer === 2) {
+    // On a bridge on layer 2 - check orientation and restrict movement
+    const upTile = tileAt(maze, currentTile.row - 1, currentTile.col);
+    const downTile = tileAt(maze, currentTile.row + 1, currentTile.col);
+    const leftTile = tileAt(maze, currentTile.row, currentTile.col - 1);
+    const rightTile = tileAt(maze, currentTile.row, currentTile.col + 1);
+    const isVerticalBridge = (leftTile === 8 || rightTile === 8);
+    const isHorizontalBridge = (upTile === 8 || downTile === 8);
+    
+    if (isVerticalBridge && moveX !== 0) {
+      moveX = 0;
+    } else if (isHorizontalBridge && moveY !== 0) {
+      moveY = 0;
+    }
   }
   if (currentCode === 7) {
     const sw = getSwitchAt(currentTile.row, currentTile.col);
@@ -256,10 +299,20 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
   }
 
   // Approaching bridges/switches from outside: treat blocked sides like walls
-  const targetTile = pixelToGrid(unicorn.x + moveX, unicorn.y + moveY);
-  const targetCode = tileAt(maze, targetTile.row, targetTile.col);
-  if (targetCode === 6 && moveX !== 0) {
-    moveX = 0;
+  // BUT: Only apply bridge restrictions when on layer 2
+  if (targetCode === 6 && unicorn.layer === 2) {
+    const upTile = tileAt(maze, targetTile.row - 1, targetTile.col);
+    const downTile = tileAt(maze, targetTile.row + 1, targetTile.col);
+    const leftTile = tileAt(maze, targetTile.row, targetTile.col - 1);
+    const rightTile = tileAt(maze, targetTile.row, targetTile.col + 1);
+    const isVerticalBridge = (leftTile === 8 || rightTile === 8);
+    const isHorizontalBridge = (upTile === 8 || downTile === 8);
+    
+    if (isVerticalBridge && moveX !== 0) {
+      moveX = 0;
+    } else if (isHorizontalBridge && moveY !== 0) {
+      moveY = 0;
+    }
   }
   if (targetCode === 7) {
     const sw = getSwitchAt(targetTile.row, targetTile.col);
@@ -286,8 +339,10 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
     return;
   }
 
-  if (!blocked(maze, unicorn.x + moveX, unicorn.y, unicorn.w, unicorn.h)) unicorn.x += moveX;
-  if (!blocked(maze, unicorn.x, unicorn.y + moveY, unicorn.w, unicorn.h)) unicorn.y += moveY;
+  // Check collisions with layer awareness (use target layer for movement checks, allow transition)
+  // Switches now block like walls - handled inside blocked() function
+  if (!blocked(maze, unicorn.x + moveX, unicorn.y, unicorn.w, unicorn.h, unicorn.layer, targetLayer, unicorn.dirX, 0, getSwitchAt)) unicorn.x += moveX;
+  if (!blocked(maze, unicorn.x, unicorn.y + moveY, unicorn.w, unicorn.h, unicorn.layer, targetLayer, 0, unicorn.dirY, getSwitchAt)) unicorn.y += moveY;
 
   if (unicorn.x === prevX && unicorn.y === prevY) {
     unicorn.dirX = -unicorn.dirX;
@@ -305,7 +360,7 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
     for (const dir of dirs) {
       const testX = unicorn.x + dir.x * TILE * 0.6;
       const testY = unicorn.y + dir.y * TILE * 0.6;
-      if (!blocked(maze, testX, testY, unicorn.w, unicorn.h)) {
+      if (!blocked(maze, testX, testY, unicorn.w, unicorn.h, unicorn.layer, null, dir.x, dir.y, getSwitchAt)) {
         unicorn.dirX = dir.x;
         unicorn.dirY = dir.y;
         break;
