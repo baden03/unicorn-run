@@ -8,13 +8,19 @@ export const DEBUG_BRIDGES = false;
 export const DEBUG_SWITCHES = false;
 // When set to a number (0-based), start directly on that level for testing
 export const DEBUG_START_LEVEL = null; // e.g. 2 to start on level 3, null for default
+// Movement debug mode: creates a simple 9x9 test maze with player and dots only
+export const MOVEMENT_DEBUG = true;
 
 // Game constants
 export const TILE = 32;
 export const ROWS = 15;
 export const COLS = 21;
-export const CANVAS_W = COLS * TILE;
-export const CANVAS_H = ROWS * TILE;
+// Debug mode dimensions
+export const DEBUG_ROWS = 11;
+export const DEBUG_COLS = 11;
+// Canvas dimensions (adjusted for debug mode - HUD is separate HTML element)
+export const CANVAS_W = MOVEMENT_DEBUG ? DEBUG_COLS * TILE : COLS * TILE;
+export const CANVAS_H = MOVEMENT_DEBUG ? DEBUG_ROWS * TILE : ROWS * TILE;
 
 export const PLAYER_SPEED = 180;
 export const UNICORN_SPEED = 115;

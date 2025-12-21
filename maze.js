@@ -1,6 +1,25 @@
 // v1.2.1 - Maze templates and factory functions
 
-import { ROWS, COLS } from './config.js';
+import { ROWS, COLS, MOVEMENT_DEBUG, DEBUG_ROWS, DEBUG_COLS } from './config.js';
+
+// Debug maze: 11x11 test maze with two 4-way intersections and wrap-around portals
+// Vertical bridge at (3,3) with tunnel entrances at (3,2) and (3,4), tunnel path at (3,2) and (3,4) on layer 0
+// Horizontal bridge at (7,7) with tunnel entrances at (6,7) and (8,7), tunnel path at (6,7) and (8,7) on layer 0
+// Tile types: 0=floor (layer 1), 1=wall, 5=wrap portal (layer 1), 6=bridge (layer 1), 7=switch (layer 1), 8=tunnel path (layer 0)
+// Tunnel entrances are floor tiles (0) adjacent to bridges - they allow layer transition
+export const MAZE_DEBUG_9x9 = [
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,0,1,0,1,0,1,0,1],  // Wall at (2,4)
+  [5,0,8,6,8,0,0,0,0,0,5],  // Row 3: wrap portals (5), tunnel path (8) at (3,2), vertical bridge (6) at (3,3), tunnel path (8) at (3,4), wrap portal
+  [1,0,1,0,1,0,1,0,1,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,0,1,0,1,8,1,0,1],  // Wall at (6,4), tunnel path (8) at (6,7) for horizontal bridge
+  [1,0,0,0,0,0,0,6,0,0,1],  // Row 7: horizontal bridge (6) at (7,7)
+  [1,0,1,0,1,0,1,8,1,0,1],  // Wall at (8,4), tunnel path (8) at (8,7) for horizontal bridge
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1],
+];
 
 // Maze templates: 0 floor, 1 wall, 5 portal; 6 bridge, 7 switch (v1.2)
 export const MAZE_CLASSIC = [
@@ -168,24 +187,27 @@ export function pickTemplateForLevel(level) {
 export function buildPortalsFromMaze(sourceMaze) {
   const used = new Set();
   const pairs = [];
-
   const key = (r, c) => `${r},${c}`;
 
+  // Determine grid dimensions based on maze size
+  const mazeRows = sourceMaze.length;
+  const mazeCols = sourceMaze[0]?.length || 0;
+
   // 1) Classic side portals: pair left/right edges on the same row.
-  for (let r = 0; r < ROWS; r++) {
-    if (sourceMaze[r][0] === 5 && sourceMaze[r][COLS - 1] === 5) {
+  for (let r = 0; r < mazeRows; r++) {
+    if (sourceMaze[r][0] === 5 && sourceMaze[r][mazeCols - 1] === 5) {
       pairs.push({
         a: { row: r, col: 0 },
-        b: { row: r, col: COLS - 1 },
+        b: { row: r, col: mazeCols - 1 },
       });
       used.add(key(r, 0));
-      used.add(key(r, COLS - 1));
+      used.add(key(r, mazeCols - 1));
     }
   }
 
   // 2) Bridge tunnels: for each row, look for 5,6,5 patterns and pair the 5s.
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 1; c < COLS - 2; c++) {
+  for (let r = 0; r < mazeRows; r++) {
+    for (let c = 1; c < mazeCols - 2; c++) {
       if (sourceMaze[r][c] === 5 &&
           sourceMaze[r][c + 1] === 6 &&
           sourceMaze[r][c + 2] === 5 &&
@@ -207,8 +229,10 @@ export function buildPortalsFromMaze(sourceMaze) {
 
 export function buildSwitchesFromMaze(sourceMaze) {
   const result = [];
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
+  const mazeRows = sourceMaze.length;
+  const mazeCols = sourceMaze[0]?.length || 0;
+  for (let r = 0; r < mazeRows; r++) {
+    for (let c = 0; c < mazeCols; c++) {
       if (sourceMaze[r][c] === 7) {
         // Alternate initial mode for a bit of variety
         const mode = (result.length % 2 === 0) ? "vertical" : "horizontal";
@@ -220,6 +244,21 @@ export function buildSwitchesFromMaze(sourceMaze) {
 }
 
 export function createMazeForLevel(levelConfig) {
+  // Check for movement debug mode
+  if (MOVEMENT_DEBUG) {
+    const newMaze = MAZE_DEBUG_9x9.map((row) => row.slice());
+    const newPortals = buildPortalsFromMaze(newMaze);
+    const newSwitches = []; // No switches in debug mode
+
+    // Spawn positions for debug mode
+    const spawns = {
+      player: { row: 1, col: 1 },
+      // No unicorn spawn in debug mode
+    };
+
+    return { maze: newMaze, portals: newPortals, switches: newSwitches, spawns };
+  }
+
   const template = pickTemplateForLevel(levelConfig);
   const newMaze = template.map((row) => row.slice());
   const newPortals = buildPortalsFromMaze(newMaze);

@@ -33,6 +33,58 @@
         <div class="joystick-stick"></div>
       </div>
     </section>
+
+    <section id="debugHud" class="debug-hud" style="display: none;">
+      <div class="debug-hud-content">
+        <h3 class="debug-hud-title">Movement Debug Info</h3>
+        <div class="debug-hud-grid">
+          <div class="debug-hud-section">
+            <h4>Player Position</h4>
+            <div id="debugPlayerPos" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Player Direction</h4>
+            <div id="debugPlayerDir" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Desired Direction</h4>
+            <div id="debugPlayerDesired" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Speed & Layer</h4>
+            <div id="debugPlayerSpeed" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Current Tile</h4>
+            <div id="debugCurrentTile" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Portal Info</h4>
+            <div id="debugPortalInfo" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Neighbors</h4>
+            <div id="debugNeighbors" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Grid Info</h4>
+            <div id="debugGridInfo" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Bridge/Tunnel Debug</h4>
+            <div id="debugBridgeTunnel" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Collision Corners</h4>
+            <div id="debugCollisionCorners" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section">
+            <h4>Movement Start Check</h4>
+            <div id="debugMovementStart" class="debug-hud-value">-</div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script type="module" src="game.js?v=1.3.0"></script>

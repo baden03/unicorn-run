@@ -61,7 +61,13 @@ export function resetEntities(spawns) {
     desiredX: 0,
     desiredY: 0,
     speed: PLAYER_SPEED,
-    layer: 0, // v1.3: Layer system
+    layer: 2, // v1.3: Layer system - start on layer 2 (floor level)
+    lastPortalRow: null, // Track last portal to prevent infinite loops
+    lastPortalCol: null,
+    portalAnimProgress: 0, // 0-1, animation progress for portal entry/exit
+    portalAnimating: false, // Whether portal animation is active
+    portalTargetX: null, // Target position for portal teleport
+    portalTargetY: null,
   };
 
   // v1.3: Support multiple unicorns

@@ -1,7 +1,7 @@
 // v1.3.0 - Rendering functions
 
-import { TILE, CANVAS_W, CANVAS_H, STATE, DEBUG_PORTALS, DEBUG_BRIDGES, DEBUG_SWITCHES } from './config.js';
-import { gridToPixel, tileAt } from './utils.js';
+import { TILE, CANVAS_W, CANVAS_H, STATE, DEBUG_PORTALS, DEBUG_BRIDGES, DEBUG_SWITCHES, MOVEMENT_DEBUG, DEBUG_ROWS, DEBUG_COLS } from './config.js';
+import { gridToPixel, tileAt, pixelToGrid } from './utils.js';
 import { UNICORN_DEFINITIONS } from './entities.js';
 
 export function drawMaze(ctx, maze, portals, switches, getSwitchAt) {
@@ -14,8 +14,19 @@ export function drawMaze(ctx, maze, portals, switches, getSwitchAt) {
         ctx.fillStyle = "#2c2f48";
         ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
       } else if (t === 5) {
+        // Wrap-around portal (still uses portal system)
         ctx.fillStyle = "#d4ddff";
         ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
+      } else if (t === 8) {
+        // Tunnel path tile (layer 0) - darker blue to indicate it's underground
+        ctx.fillStyle = "#9bb4ff";
+        ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
+        // Draw a subtle pattern to indicate tunnel
+        ctx.strokeStyle = "#7c89ff";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.strokeRect(c * TILE + 4, r * TILE + 4, TILE - 8, TILE - 8);
+        ctx.setLineDash([]);
       } else if (t === 6) {
         // Bridge: base tile
         const x = c * TILE;
@@ -134,11 +145,17 @@ export function drawDots(ctx, dots) {
   ctx.fillStyle = "#9bb4ff";
   for (const id of dots) {
     const [r, c] = id.split(",").map(Number);
-    const pos = gridToPixel(c, r);
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
-    ctx.fill();
+    drawDot(ctx, c, r);
   }
+}
+
+// Helper function to draw a single dot (used when redrawing dots on bridges)
+function drawDot(ctx, col, row) {
+  const pos = gridToPixel(col, row);
+  ctx.fillStyle = "#9bb4ff";
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 export function drawGem(ctx, gem, gemCooldown) {
@@ -198,12 +215,86 @@ export function drawFloatTexts(ctx, floatTexts) {
 }
 
 export function drawPlayer(ctx, player) {
+  ctx.save();
+  
+  // Portal animation: fade out and shrink when entering, fade in and grow when exiting
+  let alpha = 1.0;
+  let scale = 1.0;
+  let drawX = player.x;
+  let drawY = player.y;
+  
+  if (player.portalAnimating) {
+    if (player.portalAnimProgress < 0.5) {
+      // First half: fade out and shrink at source position
+      const t = player.portalAnimProgress * 2; // 0 to 1
+      alpha = 1.0 - t;
+      scale = 1.0 - t * 0.5; // Shrink to 50%
+      // Draw at current position
+      drawX = player.x;
+      drawY = player.y;
+    } else {
+      // Second half: fade in and grow at target position (landing portal)
+      const t = (player.portalAnimProgress - 0.5) * 2; // 0 to 1
+      alpha = t;
+      scale = 0.5 + t * 0.5; // Grow from 50% to 100%
+      // Draw at target position for landing effect
+      drawX = player.portalTargetX;
+      drawY = player.portalTargetY;
+    }
+  }
+  
+  ctx.globalAlpha = alpha;
+  ctx.translate(drawX, drawY);
+  ctx.scale(scale, scale);
+  
   ctx.fillStyle = "#36cfc9";
   ctx.strokeStyle = "#1890ff";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(player.x, player.y, player.w / 2, 0, Math.PI * 2);
+  ctx.arc(0, 0, player.w / 2, 0, Math.PI * 2);
   ctx.fill();
+  ctx.stroke();
+  
+  ctx.restore();
+}
+
+// Helper function to draw a single bridge tile (used to hide player when under bridge)
+// This should match the same logic as the bridge drawing in drawMaze
+function drawBridgeTile(ctx, col, row, maze) {
+  const x = col * TILE;
+  const y = row * TILE;
+  ctx.fillStyle = "#eef2ff";
+  ctx.fillRect(x, y, TILE, TILE);
+  
+  // Draw borders only on sides that are not a free path (i.e., not floor/bridge/switch)
+  ctx.strokeStyle = "#a3b0ff";
+  ctx.lineWidth = 3;
+  const pathLike = (tr, tc) => {
+    const code = tileAt(maze, tr, tc);
+    return code === 0 || code === 6 || code === 7;
+  };
+  
+  ctx.beginPath();
+  // Top edge
+  if (!pathLike(row - 1, col)) {
+    ctx.moveTo(x, y + 1.5);
+    ctx.lineTo(x + TILE, y + 1.5);
+  }
+  // Bottom edge
+  if (!pathLike(row + 1, col)) {
+    ctx.moveTo(x, y + TILE - 1.5);
+    ctx.lineTo(x + TILE, y + TILE - 1.5);
+  }
+  // Left edge
+  if (!pathLike(row, col - 1)) {
+    ctx.moveTo(x + 1.5, y);
+    ctx.lineTo(x + 1.5, y + TILE);
+  }
+  // Right edge
+  if (!pathLike(row, col + 1)) {
+    ctx.moveTo(x + TILE - 1.5, y);
+    ctx.lineTo(x + TILE - 1.5, y + TILE);
+  }
   ctx.stroke();
 }
 
@@ -273,16 +364,43 @@ export function rainbowColor(t) {
   return `hsl(${hue}, 80%, 70%)`;
 }
 
-export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unicornTrail, unicornStars, floatTexts, player, unicorn, gameState, levelIntroTimer, levelIntroText, unicornRespawnPause, invincibleTimer, getSwitchAt) {
+export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unicornTrail, unicornStars, floatTexts, player, unicorn, gameState, levelIntroTimer, levelIntroText, unicornRespawnPause, invincibleTimer, getSwitchAt, movementDebug = false) {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   drawMaze(ctx, maze, portals, switches, getSwitchAt);
   drawDots(ctx, dots);
-  drawGem(ctx, gem, gemCooldown);
-  drawTrail(ctx, unicornTrail);
-  drawStars(ctx, unicornStars);
+  
+  // Skip gem, unicorn, trail, and stars in debug mode
+  if (!movementDebug) {
+    drawGem(ctx, gem, gemCooldown);
+    drawTrail(ctx, unicornTrail);
+    drawStars(ctx, unicornStars);
+    if (unicorn) {
+      drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invincibleTimer);
+    }
+  }
+  
   drawFloatTexts(ctx, floatTexts);
-  drawPlayer(ctx, player);
-  drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invincibleTimer);
+  
+  // Check if player is on layer 1 (tunnel) and their position overlaps with a bridge
+  // If so, draw player first, then draw bridge on top to hide them
+  const playerGrid = pixelToGrid(player.x, player.y);
+  const playerTile = tileAt(maze, playerGrid.row, playerGrid.col);
+  const isUnderBridge = player.layer === 1 && playerTile === 6;
+  
+  if (!isUnderBridge) {
+    // Normal case: draw player on top
+    drawPlayer(ctx, player);
+  } else {
+    // Player is under a bridge: draw player first, then bridge on top
+    drawPlayer(ctx, player);
+    // Draw the bridge tile on top of the player to hide them (pass maze for border logic)
+    drawBridgeTile(ctx, playerGrid.col, playerGrid.row, maze);
+    // Redraw the dot if there's one on this bridge tile
+    const dotId = `${playerGrid.row},${playerGrid.col}`;
+    if (dots.has(dotId)) {
+      drawDot(ctx, playerGrid.col, playerGrid.row);
+    }
+  }
 
   if (levelIntroTimer > 0) {
     drawOverlay(ctx, levelIntroText, "#7c89ff", gameState);
