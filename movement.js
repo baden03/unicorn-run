@@ -1,6 +1,6 @@
 // v1.2.1 - Movement logic
 
-import { TILE, COLS, DEBUG_PORTALS } from './config.js';
+import { TILE, COLS, DEBUG_PORTALS, DEBUG_TUNNELS } from './config.js';
 import { pixelToGrid, gridToPixel, blocked, tileAt, isPortal, getTileMetadata, tileExistsOnLayer } from './utils.js';
 
 export function applyPortal(entity, maze, portals) {
@@ -287,6 +287,15 @@ export function updatePlayer(dt, player, maze, switches, portals, keys, joystick
   
   // Update player layer if transitioning
   if (targetLayer !== player.layer) {
+    if (DEBUG_TUNNELS) {
+      console.log("=== PLAYER LAYER TRANSITION ===", {
+        from: player.layer === 1 ? "Tunnel (1)" : "Floor (2)",
+        to: targetLayer === 1 ? "Tunnel (1)" : "Floor (2)",
+        currentTile: { row: currentTile.row, col: currentTile.col, code: currentTileCode },
+        targetTile: { row: targetTile.row, col: targetTile.col, code: targetCode },
+        position: { x: player.x.toFixed(1), y: player.y.toFixed(1) }
+      });
+    }
     player.layer = targetLayer;
   }
 
@@ -332,15 +341,42 @@ export function updatePlayer(dt, player, maze, switches, portals, keys, joystick
     // If adjacent tunnels are on top/bottom, it's a vertical tunnel
     const isVerticalTunnel = (upTile === 8 || downTile === 8);
     
+    if (DEBUG_TUNNELS) {
+      console.log("=== PLAYER IN TUNNEL ===", {
+        position: { x: player.x.toFixed(1), y: player.y.toFixed(1), grid: `${currentTile.row},${currentTile.col}` },
+        layer: player.layer,
+        layerName: player.layer === 1 ? "Tunnel (1)" : "Floor (2)",
+        orientation: isHorizontalTunnel ? "Horizontal" : isVerticalTunnel ? "Vertical" : "Unknown",
+        neighbors: { up: upTile, down: downTile, left: leftTile, right: rightTile },
+        movement: { moveX: moveX.toFixed(2), moveY: moveY.toFixed(2), dirX: player.dirX, dirY: player.dirY },
+        restrictions: {
+          horizontalTunnel: isHorizontalTunnel,
+          verticalTunnel: isVerticalTunnel,
+          blockedVertical: isHorizontalTunnel && moveY !== 0,
+          blockedHorizontal: isVerticalTunnel && moveX !== 0
+        }
+      });
+    }
+    
     if (isHorizontalTunnel && moveY !== 0) {
       // Horizontal tunnel: block vertical movement
+      if (DEBUG_TUNNELS) console.log("Player: Blocked vertical movement in horizontal tunnel");
       moveY = 0;
       player.dirY = 0;
     } else if (isVerticalTunnel && moveX !== 0) {
       // Vertical tunnel: block horizontal movement
+      if (DEBUG_TUNNELS) console.log("Player: Blocked horizontal movement in vertical tunnel");
       moveX = 0;
       player.dirX = 0;
     }
+  } else if (DEBUG_TUNNELS && player.layer === 1) {
+    // Player is on layer 1 (tunnel layer) but not on a tunnel tile (might be under a bridge)
+    console.log("=== PLAYER ON TUNNEL LAYER (not on tunnel tile) ===", {
+      position: { x: player.x.toFixed(1), y: player.y.toFixed(1), grid: `${currentTile.row},${currentTile.col}` },
+      layer: player.layer,
+      currentTileCode: currentTileCode,
+      note: currentTileCode === 6 ? "Under bridge" : "Other tile"
+    });
   }
 
   // Also check restrictions when approaching bridges/tunnels

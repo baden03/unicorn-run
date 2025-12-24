@@ -1,6 +1,6 @@
 // v1.3.0 - Unicorn AI logic
 
-import { TILE, RANDOM_INTERSECTION_COUNT, STATE, DEBUG_UNICORN, UNICORN_SPEED, MOVEMENT_DEBUG } from './config.js';
+import { TILE, RANDOM_INTERSECTION_COUNT, STATE, DEBUG_UNICORN, UNICORN_SPEED, MOVEMENT_DEBUG, DEBUG_TUNNELS } from './config.js';
 import { pixelToGrid, gridToPixel, blocked, tileAt } from './utils.js';
 import { applyPortal } from './movement.js';
 import { UNICORN_DEFINITIONS } from './entities.js';
@@ -149,6 +149,54 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
     return false;
   }
   
+  // CRITICAL RULE: Unicorns cannot make ANY direction decisions on bridges or in tunnels
+  // They must continue straight until they exit naturally - same rules as player
+  const currentTileCode = tileAt(maze, at.row, at.col);
+  
+  // BLOCK ALL decisions when:
+  // - On a bridge (layer 2, code 6)
+  // - In a tunnel (any layer, code 8)
+  // - Under a bridge (layer 1, code 6) - also cannot turn
+  const isOnBridge = currentTileCode === 6 && unicorn.layer === 2;
+  const isInTunnel = currentTileCode === 8;
+  const isUnderBridge = currentTileCode === 6 && unicorn.layer === 1;
+  
+  if (isOnBridge || isInTunnel || isUnderBridge) {
+    if (DEBUG_TUNNELS || DEBUG_UNICORN) {
+      const upTile = tileAt(maze, at.row - 1, at.col);
+      const downTile = tileAt(maze, at.row + 1, at.col);
+      const leftTile = tileAt(maze, at.row, at.col - 1);
+      const rightTile = tileAt(maze, at.row, at.col + 1);
+      
+      let orientation = "Unknown";
+      let tileType = "";
+      if (isOnBridge) {
+        tileType = "Bridge (on top)";
+        const isVerticalBridge = (leftTile === 8 || rightTile === 8);
+        const isHorizontalBridge = (upTile === 8 || downTile === 8);
+        orientation = isVerticalBridge ? "Vertical" : isHorizontalBridge ? "Horizontal" : "Unknown";
+      } else if (isInTunnel) {
+        tileType = "Tunnel";
+        const isHorizontalTunnel = (leftTile === 8 || rightTile === 8);
+        const isVerticalTunnel = (upTile === 8 || downTile === 8);
+        orientation = isHorizontalTunnel ? "Horizontal" : isVerticalTunnel ? "Vertical" : "Unknown";
+      } else if (isUnderBridge) {
+        tileType = "Bridge (under)";
+        orientation = "N/A (under bridge)";
+      }
+      
+      console.log("Unicorn decision BLOCKED: on bridge/tunnel/under bridge, must continue straight", {
+        position: { x: unicorn.x, y: unicorn.y, grid: `${at.row},${at.col}` },
+        currentDirection: { x: unicorn.dirX, y: unicorn.dirY },
+        tileType: tileType,
+        orientation: orientation,
+        layer: unicorn.layer,
+        rule: "No decisions allowed on bridges, in tunnels, or under bridges - must continue until exit"
+      });
+    }
+    return false; // BLOCK ALL decisions - must continue straight
+  }
+  
   if (DEBUG_UNICORN && (offsetX > 0.1 || offsetY > 0.1)) {
     console.log("Unicorn snapped to center", { 
       oldX: oldX.toFixed(2), oldY: oldY.toFixed(2),
@@ -173,8 +221,7 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
     });
     console.log("Current direction:", { dirX: unicorn.dirX, dirY: unicorn.dirY });
   }
-  // Get current tile info for bridge/tunnel restrictions
-  const currentTileCode = tileAt(maze, at.row, at.col);
+  // Get current tile info for bridge/tunnel restrictions (already retrieved above)
   
   const allDirs = [
     { x: 1, y: 0 }, { x: -1, y: 0 },
@@ -230,6 +277,42 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
   const validNonReverse = valid.filter(d => !(d.x === reverseDir.x && d.y === reverseDir.y));
   const isIntersection = validNonReverse.length >= 2; // 3-way or 4-way
   const isCorner = validNonReverse.length === 1 && valid.length >= 2 && !(valid[0].x === -valid[1].x && valid[0].y === -valid[1].y);
+
+  // Track turn attempts in tunnels (should not happen)
+  if (DEBUG_TUNNELS && (currentTileCode === 8 || unicorn.layer === 1)) {
+    const upTile = tileAt(maze, at.row - 1, at.col);
+    const downTile = tileAt(maze, at.row + 1, at.col);
+    const leftTile = tileAt(maze, at.row, at.col - 1);
+    const rightTile = tileAt(maze, at.row, at.col + 1);
+    const isHorizontalTunnel = (leftTile === 8 || rightTile === 8);
+    const isVerticalTunnel = (upTile === 8 || downTile === 8);
+    
+    const dirName = (d) => {
+      if (d.x === 1) return "RIGHT";
+      if (d.x === -1) return "LEFT";
+      if (d.y === 1) return "DOWN";
+      if (d.y === -1) return "UP";
+      return "NONE";
+    };
+    
+    const currentDirName = dirName({ x: unicorn.dirX, y: unicorn.dirY });
+    const wantsToTurn = isIntersection || isCorner;
+    
+    if (wantsToTurn) {
+      console.log("=== UNICORN TURN ATTEMPT IN TUNNEL ===", {
+        position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1), grid: `${at.row},${at.col}` },
+        layer: unicorn.layer,
+        currentTileCode: currentTileCode,
+        tunnelOrientation: isHorizontalTunnel ? "Horizontal" : isVerticalTunnel ? "Vertical" : "Unknown",
+        currentDirection: { x: unicorn.dirX, y: unicorn.dirY, name: currentDirName },
+        validDirections: validNonReverse.map(d => dirName(d)),
+        isIntersection,
+        isCorner,
+        warning: "Unicorn trying to turn in tunnel - this should be restricted!",
+        neighbors: { up: upTile, down: downTile, left: leftTile, right: rightTile }
+      });
+    }
+  }
 
   if (DEBUG_UNICORN) {
     const dirName = (d) => {
@@ -358,12 +441,35 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
   }
 
   // Try optimal chase/flee direction first
+  const oldDirXBeforePrimary = unicorn.dirX;
+  const oldDirYBeforePrimary = unicorn.dirY;
   if (chooseDir(primary)) {
     unicorn.lastIntersectionKey = intersectionKey; // Mark this intersection as visited
     const newDx = player.x - (unicorn.x + unicorn.dirX * TILE);
     const newDy = player.y - (unicorn.y + unicorn.dirY * TILE);
     const newDist = Math.sqrt(newDx * newDx + newDy * newDy);
     const distChange = newDist - currentDist;
+    
+    // Track if this is a turn in a tunnel (should not happen)
+    if (DEBUG_TUNNELS && (currentTileCode === 8 || unicorn.layer === 1) && (oldDirXBeforePrimary !== unicorn.dirX || oldDirYBeforePrimary !== unicorn.dirY)) {
+      const dirName = (d) => {
+        if (d.x === 1) return "RIGHT";
+        if (d.x === -1) return "LEFT";
+        if (d.y === 1) return "DOWN";
+        if (d.y === -1) return "UP";
+        return "NONE";
+      };
+      console.log("=== UNICORN TURNED IN TUNNEL ===", {
+        position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1), grid: `${at.row},${at.col}` },
+        layer: unicorn.layer,
+        currentTileCode: currentTileCode,
+        oldDirection: { x: oldDirXBeforePrimary, y: oldDirYBeforePrimary, name: dirName({ x: oldDirXBeforePrimary, y: oldDirYBeforePrimary }) },
+        newDirection: { x: unicorn.dirX, y: unicorn.dirY, name: dirName({ x: unicorn.dirX, y: unicorn.dirY }) },
+        decisionType: "PRIMARY CHASE",
+        warning: "Unicorn made a turn decision while in tunnel - check if this is valid!"
+      });
+    }
+    
     if (DEBUG_UNICORN) console.log("Decision: PRIMARY CHASE", { 
       dir: { x: unicorn.dirX, y: unicorn.dirY }, 
       reason: chaseMode ? "greedy" : "avoid",
@@ -415,9 +521,31 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
   if (preferredDirs.length > 0) {
     // Pick the direction that reduces/increases distance the most
     const bestDir = preferredDirs.sort((a, b) => chaseMode ? (a.dist - b.dist) : (b.dist - a.dist))[0];
+    const oldDirX = unicorn.dirX;
+    const oldDirY = unicorn.dirY;
     unicorn.dirX = bestDir.dir.x;
     unicorn.dirY = bestDir.dir.y;
     unicorn.lastIntersectionKey = intersectionKey; // Mark this intersection as visited
+    
+    // Track if this is a turn in a tunnel (should not happen)
+    if (DEBUG_TUNNELS && (currentTileCode === 8 || unicorn.layer === 1) && (oldDirX !== unicorn.dirX || oldDirY !== unicorn.dirY)) {
+      const dirName = (d) => {
+        if (d.x === 1) return "RIGHT";
+        if (d.x === -1) return "LEFT";
+        if (d.y === 1) return "DOWN";
+        if (d.y === -1) return "UP";
+        return "NONE";
+      };
+      console.log("=== UNICORN TURNED IN TUNNEL ===", {
+        position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1), grid: `${at.row},${at.col}` },
+        layer: unicorn.layer,
+        currentTileCode: currentTileCode,
+        oldDirection: { x: oldDirX, y: oldDirY, name: dirName({ x: oldDirX, y: oldDirY }) },
+        newDirection: { x: unicorn.dirX, y: unicorn.dirY, name: dirName({ x: unicorn.dirX, y: unicorn.dirY }) },
+        decisionType: "FALLBACK (best distance)",
+        warning: "Unicorn made a turn decision while in tunnel - check if this is valid!"
+      });
+    }
     if (DEBUG_UNICORN) {
       const dirName = (d) => {
         if (d.x === 1) return "RIGHT";
@@ -442,9 +570,31 @@ export function chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLe
   // Last resort: any valid non-reverse, else any valid
   const pick = (validNonReverse[0] ?? valid[0]);
   if (pick) {
+    const oldDirX = unicorn.dirX;
+    const oldDirY = unicorn.dirY;
     unicorn.dirX = pick.x;
     unicorn.dirY = pick.y;
     unicorn.lastIntersectionKey = intersectionKey; // Mark this intersection as visited
+    
+    // Track if this is a turn in a tunnel (should not happen)
+    if (DEBUG_TUNNELS && (currentTileCode === 8 || unicorn.layer === 1) && (oldDirX !== unicorn.dirX || oldDirY !== unicorn.dirY)) {
+      const dirName = (d) => {
+        if (d.x === 1) return "RIGHT";
+        if (d.x === -1) return "LEFT";
+        if (d.y === 1) return "DOWN";
+        if (d.y === -1) return "UP";
+        return "NONE";
+      };
+      console.log("=== UNICORN TURNED IN TUNNEL ===", {
+        position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1), grid: `${at.row},${at.col}` },
+        layer: unicorn.layer,
+        currentTileCode: currentTileCode,
+        oldDirection: { x: oldDirX, y: oldDirY, name: dirName({ x: oldDirX, y: oldDirY }) },
+        newDirection: { x: unicorn.dirX, y: unicorn.dirY, name: dirName({ x: unicorn.dirX, y: unicorn.dirY }) },
+        decisionType: "LAST RESORT",
+        warning: "Unicorn made a turn decision while in tunnel - check if this is valid!"
+      });
+    }
     const newDx = player.x - (unicorn.x + unicorn.dirX * TILE);
     const newDy = player.y - (unicorn.y + unicorn.dirY * TILE);
     const newDist = Math.sqrt(newDx * newDx + newDy * newDy);
@@ -489,8 +639,120 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
 
   const prevX = unicorn.x;
   const prevY = unicorn.y;
+  const prevDirX = unicorn.dirX;
+  const prevDirY = unicorn.dirY;
 
   chooseUnicornDir(unicorn, player, maze, gameState, randomStepsLeftRef, getSwitchAt);
+  
+  // CRITICAL: Validate that unicorn is not turning on bridges or in tunnels
+  // If it tries to turn, pause the game with debug info
+  const currentTile = pixelToGrid(unicorn.x, unicorn.y);
+  const currentCode = tileAt(maze, currentTile.row, currentTile.col);
+  const directionChanged = (prevDirX !== unicorn.dirX || prevDirY !== unicorn.dirY);
+  
+  // Check for violations: turning on bridge (layer 2) or in tunnel (any layer) or under bridge (layer 1)
+  const isOnBridge = currentCode === 6 && unicorn.layer === 2;
+  const isInTunnel = currentCode === 8;
+  const isUnderBridge = currentCode === 6 && unicorn.layer === 1;
+  
+  if (directionChanged && (isOnBridge || isInTunnel || isUnderBridge)) {
+    const dirName = (d) => {
+      if (d.x === 1) return "RIGHT";
+      if (d.x === -1) return "LEFT";
+      if (d.y === 1) return "DOWN";
+      if (d.y === -1) return "UP";
+      return "NONE";
+    };
+    
+    const upTile = tileAt(maze, currentTile.row - 1, currentTile.col);
+    const downTile = tileAt(maze, currentTile.row + 1, currentTile.col);
+    const leftTile = tileAt(maze, currentTile.row, currentTile.col - 1);
+    const rightTile = tileAt(maze, currentTile.row, currentTile.col + 1);
+    
+    let violationType = "";
+    let orientation = "";
+    
+    if (isOnBridge) {
+      // On a bridge (layer 2)
+      const isVerticalBridge = (leftTile === 8 || rightTile === 8);
+      const isHorizontalBridge = (upTile === 8 || downTile === 8);
+      orientation = isVerticalBridge ? "Vertical" : isHorizontalBridge ? "Horizontal" : "Unknown";
+      violationType = "TURN ON BRIDGE";
+    } else if (isInTunnel) {
+      // In a tunnel
+      const isHorizontalTunnel = (leftTile === 8 || rightTile === 8);
+      const isVerticalTunnel = (upTile === 8 || downTile === 8);
+      orientation = isHorizontalTunnel ? "Horizontal" : isVerticalTunnel ? "Vertical" : "Unknown";
+      violationType = "TURN IN TUNNEL";
+    } else if (isUnderBridge) {
+      // Under a bridge (layer 1) - also cannot turn
+      violationType = "TURN UNDER BRIDGE";
+      orientation = "N/A (under bridge)";
+    }
+    
+    // Check if it's a 90-degree turn
+    const wasHorizontal = prevDirX !== 0 && prevDirY === 0;
+    const wasVertical = prevDirY !== 0 && prevDirX === 0;
+    const isHorizontal = unicorn.dirX !== 0 && unicorn.dirY === 0;
+    const isVertical = unicorn.dirY !== 0 && unicorn.dirX === 0;
+    const is90DegreeTurn = (wasHorizontal && isVertical) || (wasVertical && isHorizontal);
+    
+    const errorInfo = {
+      violation: violationType,
+      position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1), grid: `${currentTile.row},${currentTile.col}` },
+      layer: unicorn.layer,
+      currentTileCode: currentCode,
+      tileName: isOnBridge ? "Bridge (on top)" : isInTunnel ? "Tunnel" : "Bridge (under)",
+      orientation: orientation,
+      oldDirection: { x: prevDirX, y: prevDirY, name: dirName({ x: prevDirX, y: prevDirY }) },
+      newDirection: { x: unicorn.dirX, y: unicorn.dirY, name: dirName({ x: unicorn.dirX, y: unicorn.dirY }) },
+      is90DegreeTurn: is90DegreeTurn,
+      neighbors: { up: upTile, down: downTile, left: leftTile, right: rightTile },
+      error: "UNICORN VIOLATED BRIDGE/TUNNEL RULE - GAME PAUSED",
+      rule: "Unicorns must continue straight on bridges and in tunnels until they exit naturally"
+    };
+    
+    console.error("=== UNICORN BRIDGE/TUNNEL VIOLATION - GAME PAUSED ===", errorInfo);
+    console.error("Unicorns must continue straight on bridges and in tunnels until they exit naturally!");
+    console.error("This should never happen - check AI decision logic!");
+    
+    // Return pause signal to game.js
+    return { 
+      pauseGame: true, 
+      violationInfo: errorInfo 
+    };
+  }
+  
+  // Track 90-degree turns while on layer 1 (tunnel layer) - for logging only
+  if (DEBUG_TUNNELS && unicorn.layer === 1 && directionChanged) {
+    const wasHorizontal = prevDirX !== 0 && prevDirY === 0;
+    const wasVertical = prevDirY !== 0 && prevDirX === 0;
+    const isHorizontal = unicorn.dirX !== 0 && unicorn.dirY === 0;
+    const isVertical = unicorn.dirY !== 0 && unicorn.dirX === 0;
+    
+    // 90-degree turn: changing from horizontal to vertical or vice versa
+    const is90DegreeTurn = (wasHorizontal && isVertical) || (wasVertical && isHorizontal);
+    
+    if (is90DegreeTurn) {
+      const dirName = (d) => {
+        if (d.x === 1) return "RIGHT";
+        if (d.x === -1) return "LEFT";
+        if (d.y === 1) return "DOWN";
+        if (d.y === -1) return "UP";
+        return "NONE";
+      };
+      
+      console.log("=== UNICORN 90° TURN ON TUNNEL LAYER ===", {
+        position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1), grid: `${currentTile.row},${currentTile.col}` },
+        layer: unicorn.layer,
+        currentTileCode: currentCode,
+        oldDirection: { x: prevDirX, y: prevDirY, name: dirName({ x: prevDirX, y: prevDirY }) },
+        newDirection: { x: unicorn.dirX, y: unicorn.dirY, name: dirName({ x: unicorn.dirX, y: unicorn.dirY }) },
+        turnType: wasHorizontal ? "Horizontal → Vertical" : "Vertical → Horizontal",
+        warning: "90-degree turn detected on tunnel layer - tunnels only allow movement in one direction!"
+      });
+    }
+  }
   
   // v1.3: Apply speed variance from definition
   const def = unicorn.definition || UNICORN_DEFINITIONS.classic;
@@ -545,6 +807,9 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
   let moveX = unicorn.dirX * currentSpeed * dt;
   let moveY = unicorn.dirY * currentSpeed * dt;
 
+  // Note: currentTile and currentCode already declared above for violation checking
+  // Position should be the same, so we can reuse those variables
+
   // Determine target layer - check if we should transition before checking collisions
   const targetTile = pixelToGrid(unicorn.x + moveX, unicorn.y + moveY);
   const targetCode = tileAt(maze, targetTile.row, targetTile.col);
@@ -552,22 +817,82 @@ export function updateUnicorn(dt, unicorn, player, maze, switches, portals, game
   if (unicorn.layer === 2 && targetCode === 8) {
     // Transitioning from floor (layer 2) to tunnel (layer 1)
     targetLayer = 1;
-  } else if (unicorn.layer === 1 && targetCode === 0) {
+  } else if (unicorn.layer === 1 && currentCode === 8 && targetCode === 0) {
     // Transitioning from tunnel (layer 1) to floor (layer 2)
+    // IMPORTANT: Only transition when CURRENTLY on a tunnel tile (code 8), not when under a bridge (code 6)
+    // This ensures we only exit the tunnel when actually leaving a tunnel entrance, not when passing under a bridge
     targetLayer = 2;
   }
   // Note: Bridges (tile 6) don't cause layer transitions
+  // - On layer 1, bridges are passed under (stay on layer 1)
+  // - On layer 2, bridges are walked over (stay on layer 2)
+  // - When under a bridge (layer 1, code 6), moving to floor (code 0) should NOT transition - stay on layer 1
   
+  // Debug tunnel state BEFORE layer transition (to show state before change)
+  if (DEBUG_TUNNELS && currentCode === 8) {
+    const upTile = tileAt(maze, currentTile.row - 1, currentTile.col);
+    const downTile = tileAt(maze, currentTile.row + 1, currentTile.col);
+    const leftTile = tileAt(maze, currentTile.row, currentTile.col - 1);
+    const rightTile = tileAt(maze, currentTile.row, currentTile.col + 1);
+    const isHorizontalTunnel = (leftTile === 8 || rightTile === 8);
+    const isVerticalTunnel = (upTile === 8 || downTile === 8);
+    
+    console.log("=== UNICORN IN TUNNEL ===", {
+      position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1), grid: `${currentTile.row},${currentTile.col}` },
+      layer: unicorn.layer,
+      layerName: unicorn.layer === 1 ? "Tunnel (1)" : "Floor (2)",
+      orientation: isHorizontalTunnel ? "Horizontal" : isVerticalTunnel ? "Vertical" : "Unknown",
+      neighbors: { up: upTile, down: downTile, left: leftTile, right: rightTile },
+      movement: { moveX: moveX.toFixed(2), moveY: moveY.toFixed(2), dirX: unicorn.dirX, dirY: unicorn.dirY },
+      restrictions: {
+        horizontalTunnel: isHorizontalTunnel,
+        verticalTunnel: isVerticalTunnel,
+        note: "Unicorn tunnel restrictions handled in AI decision logic"
+      }
+    });
+  } else if (DEBUG_TUNNELS && unicorn.layer === 1 && currentCode !== 8) {
+    // Unicorn is on layer 1 (tunnel layer) but not on a tunnel tile (might be under a bridge)
+    console.log("=== UNICORN ON TUNNEL LAYER (not on tunnel tile) ===", {
+      position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1), grid: `${currentTile.row},${currentTile.col}` },
+      layer: unicorn.layer,
+      currentTileCode: currentCode,
+      note: currentCode === 6 ? "Under bridge" : "Other tile",
+      targetTile: { row: targetTile.row, col: targetTile.col, code: targetCode },
+      willTransition: targetLayer !== unicorn.layer
+    });
+  }
+
   // Update unicorn layer if transitioning
   if (targetLayer !== unicorn.layer) {
+    if (DEBUG_TUNNELS) {
+      let reason = "Other";
+      if (unicorn.layer === 2 && targetCode === 8) {
+        reason = "Entering tunnel (floor → tunnel)";
+      } else if (unicorn.layer === 1 && targetCode === 0) {
+        reason = "Exiting tunnel to floor (tunnel → floor)";
+        if (currentCode === 6) {
+          reason += " - was under bridge";
+        } else if (currentCode === 8) {
+          reason += " - was in tunnel";
+        }
+      }
+      
+      console.log("=== UNICORN LAYER TRANSITION ===", {
+        from: unicorn.layer === 1 ? "Tunnel (1)" : "Floor (2)",
+        to: targetLayer === 1 ? "Tunnel (1)" : "Floor (2)",
+        currentTile: { row: currentTile.row, col: currentTile.col, code: currentCode, name: currentCode === 6 ? "Bridge" : currentCode === 8 ? "Tunnel" : currentCode === 0 ? "Floor" : "Other" },
+        targetTile: { row: targetTile.row, col: targetTile.col, code: targetCode, name: targetCode === 6 ? "Bridge" : targetCode === 8 ? "Tunnel" : targetCode === 0 ? "Floor" : "Other" },
+        position: { x: unicorn.x.toFixed(1), y: unicorn.y.toFixed(1) },
+        reason: reason,
+        movement: { moveX: moveX.toFixed(2), moveY: moveY.toFixed(2), dirX: unicorn.dirX, dirY: unicorn.dirY }
+      });
+    }
     unicorn.layer = targetLayer;
   }
 
   // Bridges & switches: unicorn must respect the same directional blocks as the player
   // BUT: Only apply bridge restrictions when on layer 2 (walking over bridge)
   // On layer 1 (tunnel layer), bridges don't restrict movement (you pass under them)
-  const currentTile = pixelToGrid(unicorn.x, unicorn.y);
-  const currentCode = tileAt(maze, currentTile.row, currentTile.col);
   
   if (currentCode === 6 && unicorn.layer === 2) {
     // On a bridge on layer 2 - check orientation and restrict movement

@@ -1023,6 +1023,15 @@ function loop(timestamp) {
         getSwitchAt
       );
       
+      // Check for bridge/tunnel violations - pause game if detected
+      if (unicornResult && unicornResult.pauseGame) {
+        gameState = STATE.PAUSED;
+        updateUI();
+        console.error("GAME PAUSED due to unicorn bridge/tunnel violation");
+        console.error("Violation details:", unicornResult.violationInfo);
+        // Don't continue processing - game is paused
+      }
+      
       // Update refs back to main state
       unicornRespawnPause = unicornRespawnPauseRef.value;
       randomStepsLeft = randomStepsLeftRef.value;
