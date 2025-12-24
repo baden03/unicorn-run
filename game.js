@@ -13,6 +13,11 @@ import {
   MOVEMENT_DEBUG,
   DEBUG_ROWS,
   DEBUG_COLS,
+  DEBUG_PLAYER,
+  DEBUG_UNICORN,
+  DEBUG_PORTALS,
+  DEBUG_BRIDGES,
+  DEBUG_SWITCHES,
 } from './config.js';
 
 import { pixelToGrid, gridToPixel, rectanglesOverlap, tileAt, isPortal, getTileMetadata, tileExistsOnLayer, blocked } from './utils.js';
@@ -162,6 +167,26 @@ function updateUI() {
 function updateDebugHUD() {
   if (!MOVEMENT_DEBUG || !debugHud) return;
   
+  // Show/hide sections based on DEBUG flags
+  const showSection = (id, show) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? "block" : "none";
+  };
+  
+  showSection("debugSectionPlayerPos", DEBUG_PLAYER);
+  showSection("debugSectionPlayerDir", DEBUG_PLAYER);
+  showSection("debugSectionPlayerDesired", DEBUG_PLAYER);
+  showSection("debugSectionPlayerSpeed", DEBUG_PLAYER);
+  showSection("debugSectionCurrentTile", DEBUG_PLAYER);
+  showSection("debugSectionNeighbors", DEBUG_PLAYER);
+  showSection("debugSectionGridInfo", DEBUG_PLAYER);
+  showSection("debugSectionCollisionCorners", DEBUG_PLAYER);
+  showSection("debugSectionMovementStart", DEBUG_PLAYER);
+  showSection("debugSectionPortal", DEBUG_PORTALS);
+  showSection("debugSectionBridgeTunnel", DEBUG_BRIDGES);
+  showSection("debugSectionSwitch", DEBUG_SWITCHES);
+  showSection("debugSectionUnicorn", DEBUG_UNICORN);
+  
   const grid = pixelToGrid(player.x, player.y);
   const currentTileCode = tileAt(maze, grid.row, grid.col);
   const tileNames = {
@@ -217,45 +242,50 @@ function updateDebugHUD() {
   const collisionCornersEl = document.getElementById("debugCollisionCorners");
   const movementStartEl = document.getElementById("debugMovementStart");
   const switchDebugEl = document.getElementById("debugSwitch");
+  const unicornDebugEl = document.getElementById("debugUnicorn");
   
-  if (playerPosEl) {
-    playerPosEl.innerHTML = `Pixel: (${player.x.toFixed(1)}, ${player.y.toFixed(1)})<br>Grid: (${grid.row}, ${grid.col})`;
+  // DEBUG_PLAYER sections
+  if (DEBUG_PLAYER) {
+    if (playerPosEl) {
+      playerPosEl.innerHTML = `Pixel: (${player.x.toFixed(1)}, ${player.y.toFixed(1)})<br>Grid: (${grid.row}, ${grid.col})`;
+    }
+    
+    if (playerDirEl) {
+      playerDirEl.innerHTML = `(${player.dirX}, ${player.dirY})<br>[${dirStr(player.dirX, player.dirY)}]`;
+    }
+    
+    if (playerDesiredEl) {
+      playerDesiredEl.innerHTML = `(${player.desiredX}, ${player.desiredY})<br>[${dirStr(player.desiredX, player.desiredY)}]`;
+    }
+    
+    if (playerSpeedEl) {
+      const layerName = player.layer === 1 ? "Tunnel (1)" : "Floor (2)";
+      playerSpeedEl.innerHTML = `Speed: ${player.speed.toFixed(1)}<br>Layer: ${player.layer} [${layerName}]`;
+    }
+    
+    if (currentTileEl) {
+      currentTileEl.innerHTML = `Code: ${currentTileCode}<br>Type: ${tileNames[currentTileCode] || "Unknown"}`;
+    }
+    
+    if (neighborsEl) {
+      neighborsEl.innerHTML = `Up: ${neighbors.up} [${tileNames[neighbors.up] || "Wall"}]<br>` +
+                              `Down: ${neighbors.down} [${tileNames[neighbors.down] || "Wall"}]<br>` +
+                              `Left: ${neighbors.left} [${tileNames[neighbors.left] || "Wall"}]<br>` +
+                              `Right: ${neighbors.right} [${tileNames[neighbors.right] || "Wall"}]`;
+    }
+    
+    if (gridInfoEl) {
+      gridInfoEl.innerHTML = `Size: ${DEBUG_ROWS}×${DEBUG_COLS}<br>Tile Size: ${TILE}px`;
+    }
   }
   
-  if (playerDirEl) {
-    playerDirEl.innerHTML = `(${player.dirX}, ${player.dirY})<br>[${dirStr(player.dirX, player.dirY)}]`;
-  }
-  
-  if (playerDesiredEl) {
-    playerDesiredEl.innerHTML = `(${player.desiredX}, ${player.desiredY})<br>[${dirStr(player.desiredX, player.desiredY)}]`;
-  }
-  
-  if (playerSpeedEl) {
-    const layerName = player.layer === 1 ? "Tunnel (1)" : "Floor (2)";
-    playerSpeedEl.innerHTML = `Speed: ${player.speed.toFixed(1)}<br>Layer: ${player.layer} [${layerName}]`;
-  }
-  
-  if (currentTileEl) {
-    currentTileEl.innerHTML = `Code: ${currentTileCode}<br>Type: ${tileNames[currentTileCode] || "Unknown"}`;
-  }
-  
-  if (portalInfoEl) {
+  // DEBUG_PORTALS section
+  if (DEBUG_PORTALS && portalInfoEl) {
     portalInfoEl.textContent = portalInfo;
   }
   
-  if (neighborsEl) {
-    neighborsEl.innerHTML = `Up: ${neighbors.up} [${tileNames[neighbors.up] || "Wall"}]<br>` +
-                            `Down: ${neighbors.down} [${tileNames[neighbors.down] || "Wall"}]<br>` +
-                            `Left: ${neighbors.left} [${tileNames[neighbors.left] || "Wall"}]<br>` +
-                            `Right: ${neighbors.right} [${tileNames[neighbors.right] || "Wall"}]`;
-  }
-  
-  if (gridInfoEl) {
-    gridInfoEl.innerHTML = `Size: ${DEBUG_ROWS}×${DEBUG_COLS}<br>Tile Size: ${TILE}px`;
-  }
-  
-  // Bridge/Tunnel debug info
-  if (bridgeTunnelEl) {
+  // DEBUG_BRIDGES section
+  if (DEBUG_BRIDGES && bridgeTunnelEl) {
     const isOnBridge = currentTileCode === 6;
     const isOnTunnel = currentTileCode === 8;
     const metadata = getTileMetadata(maze, grid.row, grid.col);
@@ -282,8 +312,8 @@ function updateDebugHUD() {
     bridgeTunnelEl.innerHTML = info;
   }
   
-  // Collision corners debug
-  if (collisionCornersEl) {
+  // DEBUG_PLAYER: Collision corners debug
+  if (DEBUG_PLAYER && collisionCornersEl) {
     const corners = [
       { x: player.x - player.w / 2, y: player.y - player.h / 2, name: "TL" },
       { x: player.x + player.w / 2, y: player.y - player.h / 2, name: "TR" },
@@ -371,8 +401,8 @@ function updateDebugHUD() {
     collisionCornersEl.innerHTML = cornerInfo;
   }
   
-  // Turn logic debug
-  if (movementStartEl) {
+  // DEBUG_PLAYER: Turn logic debug
+  if (DEBUG_PLAYER && movementStartEl) {
     const center = gridToPixel(grid.col, grid.row);
     const turnSnap = TILE * 0.3;
     const nearCenter = Math.abs(player.x - center.x) < turnSnap && Math.abs(player.y - center.y) < turnSnap;
@@ -431,8 +461,8 @@ function updateDebugHUD() {
     }
   }
   
-  // Movement start debug
-  if (movementStartEl) {
+  // DEBUG_PLAYER: Movement start debug
+  if (DEBUG_PLAYER && movementStartEl) {
     let startInfo = "";
     if (player.dirX === 0 && player.dirY === 0 && (player.desiredX !== 0 || player.desiredY !== 0)) {
       startInfo += `Trying to start moving ${dirStr(player.desiredX, player.desiredY)}<br>`;
@@ -564,8 +594,8 @@ function updateDebugHUD() {
     movementStartEl.innerHTML = moveInfo;
   }
   
-  // Switch debug info
-  if (switchDebugEl) {
+  // DEBUG_SWITCHES: Switch debug info
+  if (DEBUG_SWITCHES && switchDebugEl) {
     let switchInfo = "";
     
     // Check if player is on a switch
@@ -710,6 +740,43 @@ function updateDebugHUD() {
     
     switchDebugEl.innerHTML = switchInfo;
   }
+  
+  // DEBUG_UNICORN: Unicorn debug info
+  if (DEBUG_UNICORN && unicornDebugEl && unicorn) {
+    const unicornGrid = pixelToGrid(unicorn.x, unicorn.y);
+    const unicornTileCode = tileAt(maze, unicornGrid.row, unicornGrid.col);
+    let unicornInfo = `<strong>Unicorn Position:</strong><br>`;
+    unicornInfo += `Pixel: (${unicorn.x.toFixed(1)}, ${unicorn.y.toFixed(1)})<br>`;
+    unicornInfo += `Grid: (${unicornGrid.row}, ${unicornGrid.col})<br><br>`;
+    
+    unicornInfo += `<strong>Unicorn Movement:</strong><br>`;
+    unicornInfo += `Direction: (${unicorn.dirX}, ${unicorn.dirY}) [${dirStr(unicorn.dirX, unicorn.dirY)}]<br>`;
+    unicornInfo += `Speed: ${unicorn.speed.toFixed(1)}<br>`;
+    unicornInfo += `Layer: ${unicorn.layer} [${unicorn.layer === 1 ? "Tunnel (1)" : "Floor (2)"}]<br><br>`;
+    
+    unicornInfo += `<strong>Unicorn Tile:</strong><br>`;
+    unicornInfo += `Code: ${unicornTileCode} [${tileNames[unicornTileCode] || "Unknown"}]<br><br>`;
+    
+    // Distance to player
+    const dx = player.x - unicorn.x;
+    const dy = player.y - unicorn.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    unicornInfo += `<strong>Distance to Player:</strong><br>`;
+    unicornInfo += `Distance: ${dist.toFixed(1)}px<br>`;
+    unicornInfo += `Delta: (${dx.toFixed(1)}, ${dy.toFixed(1)})<br><br>`;
+    
+    // AI state (if available)
+    if (unicorn.definition) {
+      unicornInfo += `<strong>AI Behavior:</strong><br>`;
+      unicornInfo += `Type: ${unicorn.definition.name || "classic"}<br>`;
+      unicornInfo += `Chase Bias: ${unicorn.definition.behavior?.chaseBias || "N/A"}<br>`;
+      unicornInfo += `Random Bias: ${unicorn.definition.behavior?.randomBias || "N/A"}<br>`;
+    }
+    
+    unicornDebugEl.innerHTML = unicornInfo;
+  } else if (DEBUG_UNICORN && unicornDebugEl && !unicorn) {
+    unicornDebugEl.innerHTML = "No unicorn spawned";
+  }
 }
 
 // Input handlers
@@ -787,26 +854,50 @@ function updateFloatTexts(dt) {
 }
 
 function updatePortalAnimation(dt) {
-  if (!player.portalAnimating) return;
-  
-  const PORTAL_ANIM_DURATION = 0.15; // seconds for entry animation
-  player.portalAnimProgress += dt / PORTAL_ANIM_DURATION;
-  
-  if (player.portalAnimProgress >= 1.0) {
-    // Animation complete - perform the teleport
-    player.x = player.portalTargetX;
-    player.y = player.portalTargetY;
+  // Update player portal animation
+  if (player.portalAnimating) {
+    const PORTAL_ANIM_DURATION = 0.15; // seconds for entry animation
+    player.portalAnimProgress += dt / PORTAL_ANIM_DURATION;
     
-    // Get the target position to track which portal we landed on
-    const targetGrid = pixelToGrid(player.x, player.y);
-    player.lastPortalRow = targetGrid.row;
-    player.lastPortalCol = targetGrid.col;
+    if (player.portalAnimProgress >= 1.0) {
+      // Animation complete - perform the teleport
+      player.x = player.portalTargetX;
+      player.y = player.portalTargetY;
+      
+      // Get the target position to track which portal we landed on
+      const targetGrid = pixelToGrid(player.x, player.y);
+      player.lastPortalRow = targetGrid.row;
+      player.lastPortalCol = targetGrid.col;
+      
+      // Reset animation state
+      player.portalAnimating = false;
+      player.portalAnimProgress = 0;
+      player.portalTargetX = null;
+      player.portalTargetY = null;
+    }
+  }
+  
+  // Update unicorn portal animation
+  if (unicorn && unicorn.portalAnimating) {
+    const PORTAL_ANIM_DURATION = 0.15; // seconds for entry animation
+    unicorn.portalAnimProgress += dt / PORTAL_ANIM_DURATION;
     
-    // Reset animation state
-    player.portalAnimating = false;
-    player.portalAnimProgress = 0;
-    player.portalTargetX = null;
-    player.portalTargetY = null;
+    if (unicorn.portalAnimProgress >= 1.0) {
+      // Animation complete - perform the teleport
+      unicorn.x = unicorn.portalTargetX;
+      unicorn.y = unicorn.portalTargetY;
+      
+      // Get the target position to track which portal we landed on
+      const targetGrid = pixelToGrid(unicorn.x, unicorn.y);
+      unicorn.lastPortalRow = targetGrid.row;
+      unicorn.lastPortalCol = targetGrid.col;
+      
+      // Reset animation state
+      unicorn.portalAnimating = false;
+      unicorn.portalAnimProgress = 0;
+      unicorn.portalTargetX = null;
+      unicorn.portalTargetY = null;
+    }
   }
 }
 
@@ -855,7 +946,7 @@ function updateGem(dt) {
     gemsCollected += 1;
     gemCooldown = GEM_RESPAWN_MS;
     // Immediately choose a direction that moves the unicorn away from the player
-    chooseAvoidDirection(unicorn, player, maze);
+    chooseAvoidDirection(unicorn, player, maze, getSwitchAt);
     updateUI();
   }
 }
@@ -910,8 +1001,8 @@ function loop(timestamp) {
 
     updatePlayer(dt, player, maze, switches, portals, keys, joystickState, getSwitchAt);
     
-    // Skip unicorn updates in debug mode
-    if (!MOVEMENT_DEBUG) {
+    // Update unicorn in normal mode or unicorn_ai debug mode
+    if (!MOVEMENT_DEBUG || MOVEMENT_DEBUG === "unicorn_ai") {
       // Use ref objects for mutable values
       const unicornRespawnPauseRef = { value: unicornRespawnPause };
       const randomStepsLeftRef = { value: randomStepsLeft };

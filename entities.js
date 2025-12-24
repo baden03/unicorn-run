@@ -44,6 +44,13 @@ export function createUnicornFromDefinition(definition, spawn) {
     randomStepsLeft: 0,
     respawnPause: 0,
     tagged: false,
+    lastPortalRow: null, // Track last portal to prevent infinite loops
+    lastPortalCol: null,
+    portalAnimProgress: 0, // 0-1, animation progress for portal entry/exit
+    portalAnimating: false, // Whether portal animation is active
+    portalTargetX: null, // Target position for portal teleport
+    portalTargetY: null,
+    lastIntersectionKey: null, // Track last intersection to avoid multiple decisions
   };
 }
 
@@ -91,7 +98,14 @@ export function resetEntities(spawns) {
 export function seedDotsFromMaze(sourceMaze, levelConfig, spawns) {
   const dots = new Set();
   const playerSpawn = spawns?.player;
-  const unicornSpawns = spawns?.unicorns || (spawns?.unicorn ? [spawns.unicorn] : []);
+  // Handle both new format (unicorns array) and old format (single unicorn)
+  let unicornSpawns = [];
+  if (spawns?.unicorns) {
+    unicornSpawns = spawns.unicorns;
+  } else if (spawns?.unicorn) {
+    // Old format: single unicorn spawn object
+    unicornSpawns = [{ spawn: spawns.unicorn }];
+  }
 
   for (let r = 0; r < sourceMaze.length; r++) {
     for (let c = 0; c < sourceMaze[r].length; c++) {
@@ -102,7 +116,11 @@ export function seedDotsFromMaze(sourceMaze, levelConfig, spawns) {
       // Avoid spawning on player start tile
       if (playerSpawn && playerSpawn.row === r && playerSpawn.col === c) continue;
       // Avoid spawning on any unicorn start tiles
-      if (unicornSpawns.some(uc => uc.spawn && uc.spawn.row === r && uc.spawn.col === c)) continue;
+      // Handle both formats: new format has uc.spawn, old format we wrapped it
+      if (unicornSpawns.some(uc => {
+        const spawn = uc.spawn || uc; // Support both formats
+        return spawn.row === r && spawn.col === c;
+      })) continue;
       dots.add(`${r},${c}`);
     }
   }

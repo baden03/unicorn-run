@@ -370,7 +370,8 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
   drawDots(ctx, dots);
   
   // Skip gem, unicorn, trail, and stars in bridges and switches debug modes
-  if (movementDebug !== "bridges" && movementDebug !== "switches") {
+  // But show them in unicorn_ai mode and normal mode
+  if (movementDebug === "unicorn_ai" || !movementDebug) {
     drawGem(ctx, gem, gemCooldown);
     drawTrail(ctx, unicornTrail);
     drawStars(ctx, unicornStars);
@@ -388,7 +389,7 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
   // Check if unicorn is on layer 1 (tunnel) and their position overlaps with a bridge
   let unicornUnderBridge = false;
   let unicornGrid = null;
-  if (unicorn && movementDebug !== "bridges" && movementDebug !== "switches") {
+  if (unicorn && (movementDebug === "unicorn_ai" || !movementDebug)) {
     unicornGrid = pixelToGrid(unicorn.x, unicorn.y);
     const unicornTile = tileAt(maze, unicornGrid.row, unicornGrid.col);
     unicornUnderBridge = unicorn.layer === 1 && unicornTile === 6;
@@ -410,8 +411,8 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
     }
   }
   
-  // Draw unicorn (if not in debug mode)
-  if (unicorn && !movementDebug) {
+  // Draw unicorn (in normal mode or unicorn_ai debug mode)
+  if (unicorn && (movementDebug === "unicorn_ai" || !movementDebug)) {
     if (!unicornUnderBridge) {
       // Normal case: draw unicorn on top
       drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invincibleTimer);

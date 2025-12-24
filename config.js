@@ -1,4 +1,4 @@
-// v1.2.1 - Game configuration and constants
+// v1.2.2 - Game configuration and constants
 
 // Debug toggles (set true to log to console / draw helpers)
 export const DEBUG_PLAYER = false;
@@ -13,7 +13,7 @@ export const DEBUG_START_LEVEL = 1; // e.g. 2 to start on level 3, null for defa
 // - "bridges": test maze with bridges and tunnels (current)
 // - "switches": test maze with switches
 // - "unicorn_ai": test maze with unicorn AI behavior
-export const MOVEMENT_DEBUG = "switches"; // Set to false, "bridges", "switches", or "unicorn_ai"
+export const MOVEMENT_DEBUG = false; // Set to false, "bridges", "switches", or "unicorn_ai"
 
 // Game constants
 export const TILE = 32;
