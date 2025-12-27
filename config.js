@@ -8,7 +8,7 @@ export const DEBUG_BRIDGES = false;
 export const DEBUG_SWITCHES = false;
 export const DEBUG_TUNNELS = false;
 // When set to a number (0-based), start directly on that level for testing
-export const DEBUG_START_LEVEL = 2; // e.g. 2 to start on level 3, null for default
+export const DEBUG_START_LEVEL = null; // e.g. 2 to start on level 3, null for default
 // Movement debug mode: false, "bridges", "switches", or "unicorn_ai"
 // - false: normal game mode
 // - "bridges": test maze with bridges and tunnels (current)
