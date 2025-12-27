@@ -181,10 +181,40 @@ body {
 @media (max-width: 960px) {
   .page {
     padding: 12px;
+    gap: 8px;
   }
 
   .hud {
-    padding: 10px 12px;
+    padding: 8px 10px;
+    gap: 6px;
+    border-radius: 8px;
+  }
+
+  .hud-score {
+    font-size: 16px;
+  }
+
+  .hud-level,
+  .hud-lives {
+    font-size: 12px;
+  }
+
+  .hud-status {
+    font-size: 13px;
+  }
+
+  .hud-row {
+    gap: 8px;
+  }
+
+  .hud-score-group {
+    gap: 1px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: 8px;
   }
 
   .joystick {
@@ -210,7 +240,13 @@ body {
 
 @media (orientation: portrait) and (max-width: 960px) {
   .page {
-    gap: 10px;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .hud {
+    padding: 6px 8px;
+    gap: 4px;
   }
 
   .game-area {
@@ -233,14 +269,48 @@ body {
 }
 
 @media (max-width: 540px) {
+  .page {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .hud {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .hud-score {
+    font-size: 14px;
+  }
+
+  .hud-level,
+  .hud-lives {
+    font-size: 11px;
+  }
+
+  .hud-status {
+    font-size: 12px;
+  }
+
   .hud-row {
     flex-direction: column;
     align-items: flex-start;
+    gap: 6px;
+  }
+
+  .hud-score-group {
+    gap: 1px;
   }
 
   .hud-actions {
     width: 100%;
     justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .btn {
+    padding: 6px 10px;
+    font-size: 12px;
   }
 
   .joystick {
