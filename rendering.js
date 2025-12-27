@@ -158,8 +158,9 @@ function drawDot(ctx, col, row) {
   ctx.fill();
 }
 
-export function drawGem(ctx, gem, gemCooldown) {
-  if (gemCooldown > 0) return;
+export function drawGem(ctx, gem) {
+  // Don't draw gem if it's hidden (at position 0,0)
+  if (gem.x === 0 && gem.y === 0) return;
   ctx.save();
   ctx.translate(gem.x, gem.y);
   ctx.fillStyle = "#ffd166";
@@ -303,9 +304,11 @@ export function drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invinc
   ctx.translate(unicorn.x, unicorn.y);
   // Blink when player is invincible (unless unicorn is paused)
   const blinkOn = Math.floor(performance.now() / 150) % 2 === 0;
+  // v1.3: Use unicorn's definition color
+  const defColor = unicorn.definition?.color || "#ff7eb6";
   const bodyColor = (gameState === STATE.PLAYING_INVINCIBLE && blinkOn && unicornRespawnPause <= 0)
     ? rainbowColor(performance.now())
-    : "#ff7eb6";
+    : defColor;
   ctx.fillStyle = bodyColor;
   ctx.strokeStyle = "#e0487a";
   ctx.lineWidth = 2;
@@ -364,7 +367,7 @@ export function rainbowColor(t) {
   return `hsl(${hue}, 80%, 70%)`;
 }
 
-export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unicornTrail, unicornStars, floatTexts, player, unicorn, gameState, levelIntroTimer, levelIntroText, unicornRespawnPause, invincibleTimer, getSwitchAt, movementDebug = false) {
+export function draw(ctx, maze, portals, switches, dots, gem, unicornTrail, unicornStars, floatTexts, player, unicorns, gameState, levelIntroTimer, levelIntroText, unicornRespawnPause, invincibleTimer, getSwitchAt, movementDebug = false, pauseReason = null, lives = 0) {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   drawMaze(ctx, maze, portals, switches, getSwitchAt);
   drawDots(ctx, dots);
@@ -372,7 +375,7 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
   // Skip gem, unicorn, trail, and stars in bridges and switches debug modes
   // But show them in unicorn_ai mode and normal mode
   if (movementDebug === "unicorn_ai" || !movementDebug) {
-    drawGem(ctx, gem, gemCooldown);
+    drawGem(ctx, gem);
     drawTrail(ctx, unicornTrail);
     drawStars(ctx, unicornStars);
     // Unicorn will be drawn later (after player) to handle bridge hiding
@@ -386,14 +389,8 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
   const playerTile = tileAt(maze, playerGrid.row, playerGrid.col);
   const playerUnderBridge = player.layer === 1 && playerTile === 6;
   
-  // Check if unicorn is on layer 1 (tunnel) and their position overlaps with a bridge
-  let unicornUnderBridge = false;
-  let unicornGrid = null;
-  if (unicorn && (movementDebug === "unicorn_ai" || !movementDebug)) {
-    unicornGrid = pixelToGrid(unicorn.x, unicorn.y);
-    const unicornTile = tileAt(maze, unicornGrid.row, unicornGrid.col);
-    unicornUnderBridge = unicorn.layer === 1 && unicornTile === 6;
-  }
+  // v1.3: Handle multiple unicorns - check bridge state for each
+  const unicornsArray = Array.isArray(unicorns) ? unicorns : (unicorns ? [unicorns] : []);
   
   // Draw player
   if (!playerUnderBridge) {
@@ -411,20 +408,31 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
     }
   }
   
-  // Draw unicorn (in normal mode or unicorn_ai debug mode)
-  if (unicorn && (movementDebug === "unicorn_ai" || !movementDebug)) {
-    if (!unicornUnderBridge) {
-      // Normal case: draw unicorn on top
-      drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invincibleTimer);
-    } else {
-      // Unicorn is under a bridge: draw unicorn first, then bridge on top
-      drawUnicorn(ctx, unicorn, gameState, unicornRespawnPause, invincibleTimer);
-      // Draw the bridge tile on top of the unicorn to hide them
-      drawBridgeTile(ctx, unicornGrid.col, unicornGrid.row, maze);
-      // Redraw the dot if there's one on this bridge tile
-      const dotId = `${unicornGrid.row},${unicornGrid.col}`;
-      if (dots.has(dotId)) {
-        drawDot(ctx, unicornGrid.col, unicornGrid.row);
+  // Draw all unicorns (in normal mode or unicorn_ai debug mode)
+  if ((movementDebug === "unicorn_ai" || !movementDebug)) {
+    for (const unicorn of unicornsArray) {
+      if (!unicorn) continue;
+      
+      const unicornGrid = pixelToGrid(unicorn.x, unicorn.y);
+      const unicornTile = tileAt(maze, unicornGrid.row, unicornGrid.col);
+      const unicornUnderBridge = unicorn.layer === 1 && unicornTile === 6;
+      
+      // Use unicorn's definition color if available, otherwise default
+      const defColor = unicorn.definition?.color || "#ff7eb6";
+      
+      if (!unicornUnderBridge) {
+        // Normal case: draw unicorn on top
+        drawUnicorn(ctx, unicorn, gameState, unicorn.respawnPause || 0, invincibleTimer);
+      } else {
+        // Unicorn is under a bridge: draw unicorn first, then bridge on top
+        drawUnicorn(ctx, unicorn, gameState, unicorn.respawnPause || 0, invincibleTimer);
+        // Draw the bridge tile on top of the unicorn to hide them
+        drawBridgeTile(ctx, unicornGrid.col, unicornGrid.row, maze);
+        // Redraw the dot if there's one on this bridge tile
+        const dotId = `${unicornGrid.row},${unicornGrid.col}`;
+        if (dots.has(dotId)) {
+          drawDot(ctx, unicornGrid.col, unicornGrid.row);
+        }
       }
     }
   }
@@ -435,7 +443,13 @@ export function draw(ctx, maze, portals, switches, dots, gem, gemCooldown, unico
     if (gameState === STATE.TITLE) drawOverlay(ctx, "Unicorn Run", "#ffd166", gameState);
     if (gameState === STATE.GAMEOVER) drawOverlay(ctx, "Game Over", "#ff4d6d", gameState);
     if (gameState === STATE.WIN) drawOverlay(ctx, "You Win!", "#36cfc9", gameState);
-    if (gameState === STATE.PAUSED) drawOverlay(ctx, "Paused", "#ffd166", gameState);
+    if (gameState === STATE.PAUSED) {
+      // Show different message based on pause reason
+      const pausedTitle = pauseReason === "life_lost" 
+        ? `Life Lost! ${lives} ${lives === 1 ? 'life' : 'lives'} remaining`
+        : "Paused";
+      drawOverlay(ctx, pausedTitle, "#ffd166", gameState);
+    }
   }
 }
 

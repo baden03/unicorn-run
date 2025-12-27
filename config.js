@@ -8,7 +8,7 @@ export const DEBUG_BRIDGES = false;
 export const DEBUG_SWITCHES = false;
 export const DEBUG_TUNNELS = false;
 // When set to a number (0-based), start directly on that level for testing
-export const DEBUG_START_LEVEL = 1; // e.g. 2 to start on level 3, null for default
+export const DEBUG_START_LEVEL = 2; // e.g. 2 to start on level 3, null for default
 // Movement debug mode: false, "bridges", "switches", or "unicorn_ai"
 // - false: normal game mode
 // - "bridges": test maze with bridges and tunnels (current)
@@ -33,7 +33,7 @@ export const isMovementDebug = () => MOVEMENT_DEBUG !== false;
 export const PLAYER_SPEED = 180;
 export const UNICORN_SPEED = 115;
 export const INVINCIBLE_SECONDS = 6;
-export const GEM_RESPAWN_MS = 2500;
+export const GEM_RESPAWN_DELAY_AFTER_INVINCIBLE = 20.0; // Seconds to wait after invincibility ends before gem can respawn
 export const RANDOM_INTERSECTION_COUNT = 2;
 
 // Game states

@@ -8,7 +8,7 @@ import {
   ROWS,
   COLS,
   INVINCIBLE_SECONDS,
-  GEM_RESPAWN_MS,
+  GEM_RESPAWN_DELAY_AFTER_INVINCIBLE,
   STATE,
   MOVEMENT_DEBUG,
   DEBUG_ROWS,
@@ -18,6 +18,8 @@ import {
   DEBUG_PORTALS,
   DEBUG_BRIDGES,
   DEBUG_SWITCHES,
+  INITIAL_LIVES,
+  EXTRA_LIFE_SCORE_MILESTONE,
 } from './config.js';
 
 import { pixelToGrid, gridToPixel, rectanglesOverlap, tileAt, isPortal, getTileMetadata, tileExistsOnLayer, blocked } from './utils.js';
@@ -28,6 +30,8 @@ import { keys, setupInput } from './input.js';
 import { updatePlayer } from './movement.js';
 import { updateUnicorn, chooseAvoidDirection } from './ai.js';
 import { draw } from './rendering.js';
+import { storage } from './storage.js';
+import { checkQualifiesForHighScore, addHighScore, displayHighScores, initHighScoreEntry, getFastestTimeForLevel, formatTime } from './highscores.js';
 
 // DOM
 const canvas = document.getElementById("gameCanvas");
@@ -40,6 +44,7 @@ const pauseButton = document.getElementById("pauseButton");
 const joystickLeft = document.getElementById("joystickLeft");
 const joystickRight = document.getElementById("joystickRight");
 const debugHud = document.getElementById("debugHud");
+const highScoreContainer = document.getElementById("highScoreContainer");
 
 canvas.width = CANVAS_W;
 canvas.height = CANVAS_H;
@@ -51,8 +56,10 @@ let portals = [];
 let switches = [];
 let gameState = STATE.TITLE;
 let score = 0;
+let lives = INITIAL_LIVES;
+let lastExtraLifeScore = 0;
 let invincibleTimer = 0;
-let gemCooldown = 0;
+let gemRespawnDelayAfterInvincible = 0; // Timer for delay after invincibility ends
 let randomStepsLeft = 0;
 let unicornTrail = [];
 let unicornStars = [];
@@ -64,9 +71,20 @@ let levelIntroTimer = 0;
 let levelIntroText = "";
 let lastPlayerTileRow = null;
 let lastPlayerTileCol = null;
+let pauseReason = null; // "manual" or "life_lost" - tracks why game is paused
 
+// v1.3: Timing state
+let levelStartTime = 0;
+let perLevelTimes = [];
+let totalRunTime = 0;
+let deaths = 0;
+
+// v1.3: High scores
+let highScores = [];
+
+// v1.3: Multiple unicorns support
 let player = {};
-let unicorn = {};
+let unicorns = [];
 let dots = new Set();
 let gem = { x: 0, y: 0, w: 18, h: 18 };
 
@@ -77,8 +95,26 @@ function getSwitchAt(row, col) {
 
 // Level management
 function loadLevel(index, options = {}) {
-  const { resetScore = false, showIntro = true } = options;
+  const { resetScore = false, showIntro = true, resetLives = false, resetTiming = false } = options;
   currentLevelIndex = index;
+  
+  // v1.3: Track level start time for timing
+  if (resetTiming) {
+    levelStartTime = performance.now();
+    perLevelTimes = [];
+    totalRunTime = 0;
+    deaths = 0;
+  } else if (index > 0) {
+    // Calculate time for previous level
+    const previousLevelTime = performance.now() - levelStartTime;
+    perLevelTimes.push(previousLevelTime);
+    totalRunTime += previousLevelTime;
+    // Start new level timing
+    levelStartTime = performance.now();
+  } else {
+    // First level
+    levelStartTime = performance.now();
+  }
   
   // In debug mode, use a dummy level config
   const level = MOVEMENT_DEBUG ? { type: "debug" } : levels[currentLevelIndex];
@@ -90,17 +126,17 @@ function loadLevel(index, options = {}) {
   
   const entities = resetEntities(spawns);
   player = entities.player;
-  // Unicorn initialization: only skip in bridges debug mode
+  
+  // v1.3: Support multiple unicorns
   if (MOVEMENT_DEBUG === "bridges" || MOVEMENT_DEBUG === "switches") {
-    unicorn = null;
+    unicorns = [];
   } else if (MOVEMENT_DEBUG === "unicorn_ai") {
-    unicorn = entities.unicorn;
+    unicorns = entities.unicorn ? [entities.unicorn] : [];
   } else {
-    unicorn = entities.unicorn;
+    unicorns = entities.unicorns || (entities.unicorn ? [entities.unicorn] : []);
   }
   
   dots = seedDotsFromMaze(maze, level, spawns);
-  gemCooldown = 0;
   // Skip gem placement in bridges and switches debug modes
   if (MOVEMENT_DEBUG !== "bridges" && MOVEMENT_DEBUG !== "switches") {
     const newGem = placeGem(dots);
@@ -109,7 +145,13 @@ function loadLevel(index, options = {}) {
     }
   }
   
-  if (resetScore) score = 0;
+  if (resetScore) {
+    score = 0;
+    lastExtraLifeScore = 0;
+  }
+  if (resetLives) {
+    lives = INITIAL_LIVES;
+  }
   
   // Skip intro in debug modes
   if (showIntro && !MOVEMENT_DEBUG) {
@@ -123,6 +165,7 @@ function loadLevel(index, options = {}) {
   
   gameState = STATE.PLAYING_NORMAL;
   invincibleTimer = 0;
+  gemRespawnDelayAfterInvincible = 0; // Reset gem respawn delay
   randomStepsLeft = 0;
   unicornTrail = [];
   unicornStars = [];
@@ -132,26 +175,62 @@ function loadLevel(index, options = {}) {
   gemsCollected = 0;
   lastPlayerTileRow = null;
   lastPlayerTileCol = null;
+  pauseReason = null; // Clear pause reason on level load
+  
+  // Reset unicorn respawn pauses
+  unicorns.forEach(u => {
+    if (u) u.respawnPause = 0;
+  });
   
   updateUI();
 }
 
 function updateUI() {
   scoreEl.textContent = `Score: ${score}`;
-  const stateText = {
-    [STATE.TITLE]: "Press Space or Start",
-    [STATE.PLAYING_NORMAL]: "Collect dots + gems!",
-    [STATE.PLAYING_INVINCIBLE]: "Invincible! Avoid walls.",
-    [STATE.PAUSED]: "Paused - Press Space or Resume",
-    [STATE.GAMEOVER]: "Game Over - press Space or Start",
-    [STATE.WIN]: "You win! Press Space or Start",
-  };
-  statusEl.textContent = stateText[gameState];
-  if (levelEl) {
-    levelEl.textContent = `Level: ${currentLevelIndex + 1} / ${levels.length}`;
+  
+  // v1.3: Display lives
+  const livesElElement = document.getElementById("lives");
+  if (livesElElement) {
+    livesElElement.textContent = `Lives: ${lives}`;
   }
+  
+  // v1.3: Show fastest time for advanced levels
+  if (levelEl) {
+    let levelText = `Level: ${currentLevelIndex + 1} / ${levels.length}`;
+    if (currentLevelIndex > 0 && highScores.length > 0) {
+      const fastest = getFastestTimeForLevel(currentLevelIndex, highScores);
+      if (fastest) {
+        levelText += ` | Best: ${fastest.name} (${formatTime(fastest.time)})`;
+      }
+    }
+    levelEl.textContent = levelText;
+  }
+  
+  // Build state text with special handling for pause reasons
+  let statusText = "";
+  if (gameState === STATE.PAUSED) {
+    if (pauseReason === "life_lost") {
+      statusText = `Life Lost! ${lives} ${lives === 1 ? 'life' : 'lives'} remaining - Press Space or Resume to continue`;
+    } else {
+      statusText = "Paused - Press Space or Resume";
+    }
+  } else {
+    const stateText = {
+      [STATE.TITLE]: "Press Space or Start",
+      [STATE.PLAYING_NORMAL]: "Collect dots + gems!",
+      [STATE.PLAYING_INVINCIBLE]: "Invincible! Avoid walls.",
+      [STATE.GAMEOVER]: "Game Over - press Space or Start",
+      [STATE.WIN]: "You win! Press Space or Start",
+      [STATE.ENTER_HIGH_SCORE]: "Enter your name",
+      [STATE.SHOW_HIGH_SCORES]: "High Scores",
+    };
+    statusText = stateText[gameState] || "";
+  }
+  statusEl.textContent = statusText;
+  
   if (startButton) {
     startButton.textContent = gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE ? "Restart" : "Start";
+    startButton.style.display = (gameState === STATE.ENTER_HIGH_SCORE || gameState === STATE.SHOW_HIGH_SCORES) ? "none" : "block";
   }
   if (pauseButton) {
     pauseButton.style.display = (gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE || gameState === STATE.PAUSED) ? "block" : "none";
@@ -162,10 +241,16 @@ function updateUI() {
   if (debugHud) {
     debugHud.style.display = MOVEMENT_DEBUG ? "block" : "none";
   }
+  
+  // Show/hide high score container
+  if (highScoreContainer) {
+    highScoreContainer.style.display = (gameState === STATE.ENTER_HIGH_SCORE || gameState === STATE.SHOW_HIGH_SCORES) ? "block" : "none";
+  }
 }
 
 function updateDebugHUD() {
-  if (!MOVEMENT_DEBUG || !debugHud) return;
+  // Show debug HUD if any debug flag is enabled
+  if (!(MOVEMENT_DEBUG || DEBUG_PLAYER || DEBUG_UNICORN || DEBUG_PORTALS || DEBUG_BRIDGES || DEBUG_SWITCHES) || !debugHud) return;
   
   // Show/hide sections based on DEBUG flags
   const showSection = (id, show) => {
@@ -186,6 +271,8 @@ function updateDebugHUD() {
   showSection("debugSectionBridgeTunnel", DEBUG_BRIDGES);
   showSection("debugSectionSwitch", DEBUG_SWITCHES);
   showSection("debugSectionUnicorn", DEBUG_UNICORN);
+  showSection("debugSectionGameState", DEBUG_PLAYER);
+  showSection("debugSectionCollision", DEBUG_PLAYER);
   
   const grid = pixelToGrid(player.x, player.y);
   const currentTileCode = tileAt(maze, grid.row, grid.col);
@@ -741,53 +828,147 @@ function updateDebugHUD() {
     switchDebugEl.innerHTML = switchInfo;
   }
   
-  // DEBUG_UNICORN: Unicorn debug info
-  if (DEBUG_UNICORN && unicornDebugEl && unicorn) {
-    const unicornGrid = pixelToGrid(unicorn.x, unicorn.y);
-    const unicornTileCode = tileAt(maze, unicornGrid.row, unicornGrid.col);
-    let unicornInfo = `<strong>Unicorn Position:</strong><br>`;
-    unicornInfo += `Pixel: (${unicorn.x.toFixed(1)}, ${unicorn.y.toFixed(1)})<br>`;
-    unicornInfo += `Grid: (${unicornGrid.row}, ${unicornGrid.col})<br><br>`;
+  // DEBUG_UNICORN: Unicorn debug info (v1.3: support multiple unicorns)
+  if (DEBUG_UNICORN && unicornDebugEl) {
+    if (unicorns.length === 0) {
+      unicornDebugEl.innerHTML = "No unicorns spawned";
+    } else {
+      let unicornInfo = `<strong>Unicorns (${unicorns.length}):</strong><br><br>`;
+      unicorns.forEach((unicorn, index) => {
+        if (!unicorn) return;
+        const unicornGrid = pixelToGrid(unicorn.x, unicorn.y);
+        const unicornTileCode = tileAt(maze, unicornGrid.row, unicornGrid.col);
+        
+        unicornInfo += `<strong>Unicorn ${index + 1}:</strong><br>`;
+        unicornInfo += `Position: (${unicorn.x.toFixed(1)}, ${unicorn.y.toFixed(1)}) Grid: (${unicornGrid.row}, ${unicornGrid.col})<br>`;
+        unicornInfo += `Direction: (${unicorn.dirX}, ${unicorn.dirY}) [${dirStr(unicorn.dirX, unicorn.dirY)}]<br>`;
+        unicornInfo += `Speed: ${unicorn.speed.toFixed(1)}<br>`;
+        unicornInfo += `Layer: ${unicorn.layer} [${unicorn.layer === 1 ? "Tunnel (1)" : "Floor (2)"}]<br>`;
+        unicornInfo += `Tile: ${unicornTileCode} [${tileNames[unicornTileCode] || "Unknown"}]<br>`;
+        
+        // Distance to player
+        const dx = player.x - unicorn.x;
+        const dy = player.y - unicorn.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        unicornInfo += `Distance to Player: ${dist.toFixed(1)}px (Δ${dx.toFixed(1)}, ${dy.toFixed(1)})<br>`;
+        
+        // AI state (if available)
+        if (unicorn.definition) {
+          unicornInfo += `Type: ${unicorn.definition.name || "classic"}<br>`;
+          unicornInfo += `Chase Bias: ${unicorn.definition.behavior?.chaseBias || "N/A"}<br>`;
+          unicornInfo += `Random Bias: ${unicorn.definition.behavior?.randomBias || "N/A"}<br>`;
+        }
+        unicornInfo += `<br>`;
+      });
+      
+      unicornDebugEl.innerHTML = unicornInfo;
+    }
+  }
+  
+  // DEBUG_PLAYER: Game State & Lives debug
+  if (DEBUG_PLAYER) {
+    // Define stateNames at function scope so it can be used in multiple sections
+    const stateNames = {
+      [STATE.TITLE]: "TITLE",
+      [STATE.PLAYING_NORMAL]: "PLAYING_NORMAL",
+      [STATE.PLAYING_INVINCIBLE]: "PLAYING_INVINCIBLE",
+      [STATE.PAUSED]: "PAUSED",
+      [STATE.GAMEOVER]: "GAMEOVER",
+      [STATE.WIN]: "WIN",
+      [STATE.ENTER_HIGH_SCORE]: "ENTER_HIGH_SCORE",
+      [STATE.SHOW_HIGH_SCORES]: "SHOW_HIGH_SCORES",
+    };
     
-    unicornInfo += `<strong>Unicorn Movement:</strong><br>`;
-    unicornInfo += `Direction: (${unicorn.dirX}, ${unicorn.dirY}) [${dirStr(unicorn.dirX, unicorn.dirY)}]<br>`;
-    unicornInfo += `Speed: ${unicorn.speed.toFixed(1)}<br>`;
-    unicornInfo += `Layer: ${unicorn.layer} [${unicorn.layer === 1 ? "Tunnel (1)" : "Floor (2)"}]<br><br>`;
-    
-    unicornInfo += `<strong>Unicorn Tile:</strong><br>`;
-    unicornInfo += `Code: ${unicornTileCode} [${tileNames[unicornTileCode] || "Unknown"}]<br><br>`;
-    
-    // Distance to player
-    const dx = player.x - unicorn.x;
-    const dy = player.y - unicorn.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    unicornInfo += `<strong>Distance to Player:</strong><br>`;
-    unicornInfo += `Distance: ${dist.toFixed(1)}px<br>`;
-    unicornInfo += `Delta: (${dx.toFixed(1)}, ${dy.toFixed(1)})<br><br>`;
-    
-    // AI state (if available)
-    if (unicorn.definition) {
-      unicornInfo += `<strong>AI Behavior:</strong><br>`;
-      unicornInfo += `Type: ${unicorn.definition.name || "classic"}<br>`;
-      unicornInfo += `Chase Bias: ${unicorn.definition.behavior?.chaseBias || "N/A"}<br>`;
-      unicornInfo += `Random Bias: ${unicorn.definition.behavior?.randomBias || "N/A"}<br>`;
+    const gameStateEl = document.getElementById("debugGameState");
+    if (gameStateEl) {
+      let stateInfo = `<strong>Game State:</strong><br>`;
+      stateInfo += `Current: ${stateNames[gameState] || gameState}<br><br>`;
+      
+      stateInfo += `<strong>Lives System:</strong><br>`;
+      stateInfo += `Lives: ${lives}<br>`;
+      stateInfo += `Deaths: ${deaths}<br>`;
+      stateInfo += `Last Extra Life Score: ${lastExtraLifeScore}<br><br>`;
+      
+      stateInfo += `<strong>Score:</strong><br>`;
+      stateInfo += `Score: ${score}<br>`;
+      stateInfo += `Gems Collected: ${gemsCollected}<br><br>`;
+      
+      stateInfo += `<strong>Timing:</strong><br>`;
+      stateInfo += `Level Start Time: ${levelStartTime.toFixed(0)}<br>`;
+      stateInfo += `Current Time: ${performance.now().toFixed(0)}<br>`;
+      stateInfo += `Level Elapsed: ${(performance.now() - levelStartTime).toFixed(0)}ms<br>`;
+      stateInfo += `Total Run Time: ${totalRunTime.toFixed(0)}ms<br>`;
+      stateInfo += `Per Level Times: [${perLevelTimes.map(t => t.toFixed(0)).join(", ")}]<br><br>`;
+      
+      stateInfo += `<strong>Level:</strong><br>`;
+      stateInfo += `Current Level Index: ${currentLevelIndex}<br>`;
+      stateInfo += `Level Name: ${levels[currentLevelIndex]?.name || "Unknown"}<br><br>`;
+      
+      stateInfo += `<strong>Invincibility:</strong><br>`;
+      stateInfo += `Timer: ${invincibleTimer.toFixed(2)}s<br>`;
+      stateInfo += `Active: ${invincibleTimer > 0 ? "Yes" : "No"}<br>`;
+      
+      gameStateEl.innerHTML = stateInfo;
     }
     
-    unicornDebugEl.innerHTML = unicornInfo;
-  } else if (DEBUG_UNICORN && unicornDebugEl && !unicorn) {
-    unicornDebugEl.innerHTML = "No unicorn spawned";
+    // DEBUG_PLAYER: Collision Detection debug
+    const collisionEl = document.getElementById("debugCollision");
+    if (collisionEl) {
+      let collisionInfo = `<strong>Collision Checks:</strong><br>`;
+      collisionInfo += `Unicorns Count: ${unicorns.length}<br><br>`;
+      
+      if (unicorns.length > 0) {
+        unicorns.forEach((unicorn, index) => {
+          if (!unicorn) {
+            collisionInfo += `Unicorn ${index + 1}: null<br>`;
+            return;
+          }
+          
+          const dx = player.x - unicorn.x;
+          const dy = player.y - unicorn.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const overlapping = rectanglesOverlap(player, unicorn);
+          const sameLayer = player.layer === unicorn.layer;
+          const respawnPause = unicorn.respawnPause || 0;
+          const wouldCollide = respawnPause <= 0 && sameLayer && overlapping;
+          
+          collisionInfo += `<strong>Unicorn ${index + 1}:</strong><br>`;
+          collisionInfo += `&nbsp;&nbsp;Position: (${unicorn.x.toFixed(1)}, ${unicorn.y.toFixed(1)})<br>`;
+          collisionInfo += `&nbsp;&nbsp;Player Position: (${player.x.toFixed(1)}, ${player.y.toFixed(1)})<br>`;
+          collisionInfo += `&nbsp;&nbsp;Distance: ${dist.toFixed(1)}px<br>`;
+          collisionInfo += `&nbsp;&nbsp;Overlapping: ${overlapping ? "YES" : "NO"}<br>`;
+          collisionInfo += `&nbsp;&nbsp;Same Layer: ${sameLayer ? "YES" : "NO"} (P:${player.layer} U:${unicorn.layer})<br>`;
+          collisionInfo += `&nbsp;&nbsp;Respawn Pause: ${respawnPause.toFixed(2)}s<br>`;
+          collisionInfo += `&nbsp;&nbsp;<strong>Would Collide: ${wouldCollide ? "YES ⚠️" : "NO"}</strong><br>`;
+          collisionInfo += `&nbsp;&nbsp;Game State: ${stateNames[gameState] || gameState}<br>`;
+          if (wouldCollide && gameState === STATE.PLAYING_NORMAL) {
+            collisionInfo += `&nbsp;&nbsp;<strong style="color: red;">→ Would trigger handlePlayerDeath()!</strong><br>`;
+          }
+          collisionInfo += `<br>`;
+        });
+      }
+      
+      collisionInfo += `<strong>Collision Logic:</strong><br>`;
+      collisionInfo += `Checking collisions: ${gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE ? "YES" : "NO"}<br>`;
+      collisionInfo += `Debug Mode: ${MOVEMENT_DEBUG || "false"}<br>`;
+      collisionInfo += `Skip collision check: ${MOVEMENT_DEBUG === "bridges" || MOVEMENT_DEBUG === "switches" ? "YES" : "NO"}<br>`;
+      
+      collisionEl.innerHTML = collisionInfo;
+    }
   }
 }
 
 // Input handlers
 function handleSpace() {
-  if (gameState === STATE.TITLE || gameState === STATE.GAMEOVER || gameState === STATE.WIN) {
+  if (gameState === STATE.TITLE || gameState === STATE.GAMEOVER || gameState === STATE.WIN || gameState === STATE.SHOW_HIGH_SCORES) {
     startGame();
   } else if (gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE) {
     gameState = STATE.PAUSED;
+    pauseReason = "manual"; // Manual pause
     updateUI();
   } else if (gameState === STATE.PAUSED) {
     gameState = invincibleTimer > 0 ? STATE.PLAYING_INVINCIBLE : STATE.PLAYING_NORMAL;
+    pauseReason = null; // Clear pause reason when resuming
     updateUI();
   }
 }
@@ -799,9 +980,11 @@ function handleStart() {
 function handlePause() {
   if (gameState === STATE.PLAYING_NORMAL || gameState === STATE.PLAYING_INVINCIBLE) {
     gameState = STATE.PAUSED;
+    pauseReason = "manual"; // Manual pause
     updateUI();
   } else if (gameState === STATE.PAUSED) {
     gameState = invincibleTimer > 0 ? STATE.PLAYING_INVINCIBLE : STATE.PLAYING_NORMAL;
+    pauseReason = null; // Clear pause reason when resuming
     updateUI();
   }
 }
@@ -877,28 +1060,30 @@ function updatePortalAnimation(dt) {
     }
   }
   
-  // Update unicorn portal animation
-  if (unicorn && unicorn.portalAnimating) {
-    const PORTAL_ANIM_DURATION = 0.15; // seconds for entry animation
-    unicorn.portalAnimProgress += dt / PORTAL_ANIM_DURATION;
-    
-    if (unicorn.portalAnimProgress >= 1.0) {
-      // Animation complete - perform the teleport
-      unicorn.x = unicorn.portalTargetX;
-      unicorn.y = unicorn.portalTargetY;
+  // v1.3: Update all unicorns' portal animations
+  unicorns.forEach(unicorn => {
+    if (unicorn && unicorn.portalAnimating) {
+      const PORTAL_ANIM_DURATION = 0.15; // seconds for entry animation
+      unicorn.portalAnimProgress += dt / PORTAL_ANIM_DURATION;
       
-      // Get the target position to track which portal we landed on
-      const targetGrid = pixelToGrid(unicorn.x, unicorn.y);
-      unicorn.lastPortalRow = targetGrid.row;
-      unicorn.lastPortalCol = targetGrid.col;
-      
-      // Reset animation state
-      unicorn.portalAnimating = false;
-      unicorn.portalAnimProgress = 0;
-      unicorn.portalTargetX = null;
-      unicorn.portalTargetY = null;
+      if (unicorn.portalAnimProgress >= 1.0) {
+        // Animation complete - perform the teleport
+        unicorn.x = unicorn.portalTargetX;
+        unicorn.y = unicorn.portalTargetY;
+        
+        // Get the target position to track which portal we landed on
+        const targetGrid = pixelToGrid(unicorn.x, unicorn.y);
+        unicorn.lastPortalRow = targetGrid.row;
+        unicorn.lastPortalCol = targetGrid.col;
+        
+        // Reset animation state
+        unicorn.portalAnimating = false;
+        unicorn.portalAnimProgress = 0;
+        unicorn.portalTargetX = null;
+        unicorn.portalTargetY = null;
+      }
     }
-  }
+  });
 }
 
 function updateDots() {
@@ -917,8 +1102,11 @@ function updateDots() {
       if (currentLevelIndex < levels.length - 1) {
         loadLevel(currentLevelIndex + 1, { resetScore: false, showIntro: true });
       } else {
-        gameState = STATE.WIN;
-        updateUI();
+        // v1.3: Calculate final timing before checking high score
+        const finalLevelTime = performance.now() - levelStartTime;
+        perLevelTimes.push(finalLevelTime);
+        totalRunTime += finalLevelTime;
+        handleGameWin();
       }
     }
   }
@@ -928,26 +1116,263 @@ function updateGem(dt) {
   // Enforce a maximum of 5 gems per run
   if (gemsCollected >= 5) return;
 
-  if (gemCooldown > 0) {
-    gemCooldown -= dt * 1000;
-    if (gemCooldown <= 0) {
-      const newGem = placeGem(dots);
-      if (newGem) {
-        gem = newGem;
-      }
+  // Update gem respawn delay after invincibility
+  if (gemRespawnDelayAfterInvincible > 0) {
+    gemRespawnDelayAfterInvincible -= dt;
+    if (gemRespawnDelayAfterInvincible < 0) {
+      gemRespawnDelayAfterInvincible = 0;
     }
   }
-  if (gemCooldown > 0) return;
+  
+  // Don't spawn gem during invincibility OR if we're waiting for the post-invincibility delay
+  if (invincibleTimer > 0 || gemRespawnDelayAfterInvincible > 0) {
+    return;
+  }
+  
+  // Spawn gem if it doesn't exist and conditions are met (not during invincibility, delay expired)
+  if (!gem || (gem.x === 0 && gem.y === 0)) {
+    const newGem = placeGem(dots);
+    if (newGem) {
+      gem = newGem;
+    }
+  }
+  
   if (rectanglesOverlap(player, gem)) {
     invincibleTimer = INVINCIBLE_SECONDS;
     gameState = STATE.PLAYING_INVINCIBLE;
-    unicornTagged = false;
+    // Reset tagged state for all unicorns when a new gem is collected
+    unicorns.forEach(u => {
+      if (u) u.tagged = false;
+    });
+    unicornTagged = false; // Legacy flag for backwards compatibility
+    // Don't set gemRespawnDelayAfterInvincible here - it will be set when invincibility ends
     score += 5;
     gemsCollected += 1;
-    gemCooldown = GEM_RESPAWN_MS;
-    // Immediately choose a direction that moves the unicorn away from the player
-    chooseAvoidDirection(unicorn, player, maze, getSwitchAt);
+    gem = { x: 0, y: 0, w: 18, h: 18 }; // Hide gem immediately
+    // Immediately choose a direction that moves all unicorns away from the player
+    unicorns.forEach(u => {
+      if (u) chooseAvoidDirection(u, player, maze, getSwitchAt);
+    });
     updateUI();
+  }
+  
+  // v1.3: Award extra life at score milestones
+  if (score >= lastExtraLifeScore + EXTRA_LIFE_SCORE_MILESTONE) {
+    lives += 1;
+    lastExtraLifeScore = score;
+    floatTexts.push({ x: player.x, y: player.y - 20, text: "EXTRA LIFE!", life: 2.0, maxLife: 2.0 });
+    updateUI();
+  }
+}
+
+// v1.3: Handle game over with lives system
+function handlePlayerDeath() {
+  console.log('[handlePlayerDeath] Called', { 
+    livesBefore: lives, 
+    livesAfter: lives - 1, 
+    deaths: deaths + 1, 
+    gameState,
+    currentLevelIndex,
+    levelName: levels[currentLevelIndex]?.name
+  });
+  
+  // Safety check: ensure lives is valid
+  if (typeof lives !== 'number' || lives < 0) {
+    console.error('[handlePlayerDeath] ERROR: Invalid lives value:', lives);
+    lives = 0; // Set to 0 to trigger game over
+  }
+  
+  deaths += 1;
+  lives -= 1;
+  
+  console.log('[handlePlayerDeath] After decrement', { lives, livesIsZeroOrLess: lives <= 0 });
+  
+  if (lives <= 0) {
+    console.log('[handlePlayerDeath] Game Over - no lives left');
+    // Game over - calculate final timing
+    const finalLevelTime = performance.now() - levelStartTime;
+    if (currentLevelIndex < perLevelTimes.length || perLevelTimes.length === 0) {
+      perLevelTimes.push(finalLevelTime);
+      totalRunTime += finalLevelTime;
+    }
+    handleGameOver();
+  } else {
+    console.log('[handlePlayerDeath] Resetting positions, lives remaining:', lives);
+    try {
+      // Reset positions but continue playing - recreate entities from spawns
+      if (currentLevelIndex < 0 || currentLevelIndex >= levels.length) {
+        console.error('[handlePlayerDeath] ERROR: Invalid level index:', currentLevelIndex, 'Levels length:', levels.length);
+        // Fallback: just reset player, keep existing unicorns
+        const playerSpawn = { row: 1, col: 1 };
+        const playerPos = gridToPixel(playerSpawn.col, playerSpawn.row);
+        player.x = playerPos.x;
+        player.y = playerPos.y;
+        player.dirX = 0;
+        player.dirY = 0;
+        player.desiredX = 0;
+        player.desiredY = 0;
+        gameState = STATE.PAUSED;
+        pauseReason = "life_lost";
+        updateUI();
+        return;
+      }
+      
+      const level = levels[currentLevelIndex];
+      if (!level) {
+        console.error('[handlePlayerDeath] ERROR: Level is null/undefined at index:', currentLevelIndex);
+        // Fallback
+        const playerSpawn = { row: 1, col: 1 };
+        const playerPos = gridToPixel(playerSpawn.col, playerSpawn.row);
+        player.x = playerPos.x;
+        player.y = playerPos.y;
+        player.dirX = 0;
+        player.dirY = 0;
+        player.desiredX = 0;
+        player.desiredY = 0;
+        gameState = STATE.PAUSED;
+        pauseReason = "life_lost";
+        updateUI();
+        return;
+      }
+      
+      console.log('[handlePlayerDeath] Level:', level, 'Level index:', currentLevelIndex);
+      const { spawns } = createMazeForLevel(level);
+      console.log('[handlePlayerDeath] Spawns:', JSON.stringify(spawns, null, 2));
+      
+      // Reset player
+      const playerSpawn = spawns.player || { row: 1, col: 1 };
+      const playerPos = gridToPixel(playerSpawn.col, playerSpawn.row);
+      player.x = playerPos.x;
+      player.y = playerPos.y;
+      player.dirX = 0;
+      player.dirY = 0;
+      player.desiredX = 0; // Clear desired direction to prevent immediate movement
+      player.desiredY = 0;
+      player.layer = 2; // Reset to floor layer
+      console.log('[handlePlayerDeath] Player reset to:', { x: player.x, y: player.y });
+      
+      // Reset unicorns - recreate from spawns to ensure they're properly initialized
+      const entities = resetEntities(spawns);
+      console.log('[handlePlayerDeath] Entities from resetEntities:', { 
+        unicornsCount: entities.unicorns?.length || 0,
+        hasUnicorn: !!entities.unicorn 
+      });
+      unicorns = entities.unicorns || (entities.unicorn ? [entities.unicorn] : []);
+      console.log('[handlePlayerDeath] Unicorns reset, count:', unicorns.length);
+      
+      if (unicorns.length === 0) {
+        console.error('[handlePlayerDeath] WARNING: No unicorns after reset!');
+      }
+      
+      // Clear unicorn trail and stars on respawn
+      unicornTrail = [];
+      unicornStars = [];
+      unicornTagged = false;
+      
+      invincibleTimer = 1.0; // Brief invincibility after respawn
+      gameState = STATE.PAUSED; // Pause the game after respawn
+      pauseReason = "life_lost"; // Mark as paused due to life loss
+      console.log('[handlePlayerDeath] Game state set to PAUSED after respawn, lives:', lives);
+      updateUI();
+      console.log('[handlePlayerDeath] Complete, game paused - player can resume');
+    } catch (error) {
+      console.error('[handlePlayerDeath] ERROR during reset:', error);
+      // Fallback: just reset player position, keep existing unicorns
+      const playerSpawn = { row: 1, col: 1 };
+      const playerPos = gridToPixel(playerSpawn.col, playerSpawn.row);
+      player.x = playerPos.x;
+      player.y = playerPos.y;
+      player.dirX = 0;
+      player.dirY = 0;
+      player.desiredX = 0;
+      player.desiredY = 0;
+      gameState = STATE.PAUSED;
+      pauseReason = "life_lost";
+      updateUI();
+    }
+  }
+}
+
+// v1.3: Handle game over - check high score
+async function handleGameOver() {
+  console.log('[handleGameOver] Called', { score, lives, deaths });
+  
+  // Ensure high scores are loaded
+  if (highScores.length === 0) {
+    highScores = await storage.loadHighScores();
+    console.log('[handleGameOver] Loaded high scores:', highScores.length);
+  }
+  
+  gameState = STATE.GAMEOVER;
+  updateUI();
+  
+  // Check if score qualifies for high score
+  if (checkQualifiesForHighScore(score, highScores)) {
+    console.log('[handleGameOver] Score qualifies for high score entry');
+    gameState = STATE.ENTER_HIGH_SCORE;
+    updateUI();
+    initHighScoreEntry(highScoreContainer, async (name) => {
+      const entry = {
+        name: name.toUpperCase().slice(0, 5),
+        score: score,
+        levelReached: currentLevelIndex + 1,
+        levelsCompleted: currentLevelIndex,
+        timing: {
+          totalMs: totalRunTime,
+          perLevelMs: [...perLevelTimes]
+        },
+        deaths: deaths,
+        unicornsDefeated: 0, // Future stat
+        timestamp: Math.floor(Date.now() / 1000)
+      };
+      
+      highScores = addHighScore(entry, highScores);
+      await storage.saveHighScores(highScores);
+      
+      gameState = STATE.SHOW_HIGH_SCORES;
+      updateUI();
+      displayHighScores(highScoreContainer, highScores);
+    });
+  } else {
+    console.log('[handleGameOver] Score does not qualify, showing high score table');
+    // Score doesn't qualify, but still show the high score table
+    gameState = STATE.SHOW_HIGH_SCORES;
+    updateUI();
+    displayHighScores(highScoreContainer, highScores);
+  }
+}
+
+// v1.3: Handle game win - check high score
+async function handleGameWin() {
+  gameState = STATE.WIN;
+  updateUI();
+  
+  // Check if score qualifies for high score
+  if (checkQualifiesForHighScore(score, highScores)) {
+    gameState = STATE.ENTER_HIGH_SCORE;
+    updateUI();
+    initHighScoreEntry(highScoreContainer, async (name) => {
+      const entry = {
+        name: name.toUpperCase().slice(0, 5),
+        score: score,
+        levelReached: levels.length,
+        levelsCompleted: levels.length,
+        timing: {
+          totalMs: totalRunTime,
+          perLevelMs: [...perLevelTimes]
+        },
+        deaths: deaths,
+        unicornsDefeated: 0, // Future stat
+        timestamp: Math.floor(Date.now() / 1000)
+      };
+      
+      highScores = addHighScore(entry, highScores);
+      await storage.saveHighScores(highScores);
+      
+      gameState = STATE.SHOW_HIGH_SCORES;
+      updateUI();
+      displayHighScores(highScoreContainer, highScores);
+    });
   }
 }
 
@@ -955,13 +1380,13 @@ function updateGem(dt) {
 function startGame() {
   if (MOVEMENT_DEBUG) {
     // In debug mode, just load level 0 (which will be ignored)
-    loadLevel(0, { resetScore: true, showIntro: false });
+    loadLevel(0, { resetScore: true, resetLives: true, resetTiming: true, showIntro: false });
   } else {
     const hasDebugLevel = typeof DEBUG_START_LEVEL === "number";
     const clamped = hasDebugLevel
       ? Math.max(0, Math.min(levels.length - 1, DEBUG_START_LEVEL))
       : 0;
-    loadLevel(clamped, { resetScore: true, showIntro: true });
+    loadLevel(clamped, { resetScore: true, resetLives: true, resetTiming: true, showIntro: true });
   }
 }
 
@@ -1001,44 +1426,48 @@ function loop(timestamp) {
 
     updatePlayer(dt, player, maze, switches, portals, keys, joystickState, getSwitchAt);
     
-    // Update unicorn in normal mode or unicorn_ai debug mode
+    // v1.3: Update all unicorns in normal mode or unicorn_ai debug mode
     if (!MOVEMENT_DEBUG || MOVEMENT_DEBUG === "unicorn_ai") {
-      // Use ref objects for mutable values
-      const unicornRespawnPauseRef = { value: unicornRespawnPause };
-      const randomStepsLeftRef = { value: randomStepsLeft };
-      
-      const unicornResult = updateUnicorn(
-        dt,
-        unicorn,
-        player,
-        maze,
-        switches,
-        portals,
-        gameState,
-        unicornRespawnPauseRef,
-        randomStepsLeftRef,
-        unicornTrail,
-        unicornStars,
-        invincibleTimer,
-        getSwitchAt
-      );
-      
-      // Check for bridge/tunnel violations - pause game if detected
-      if (unicornResult && unicornResult.pauseGame) {
-        gameState = STATE.PAUSED;
-        updateUI();
-        console.error("GAME PAUSED due to unicorn bridge/tunnel violation");
-        console.error("Violation details:", unicornResult.violationInfo);
-        // Don't continue processing - game is paused
-      }
-      
-      // Update refs back to main state
-      unicornRespawnPause = unicornRespawnPauseRef.value;
-      randomStepsLeft = randomStepsLeftRef.value;
-      
-      if (unicornResult && unicornResult.newStars) {
-        unicornStars.push(...unicornResult.newStars);
-      }
+      unicorns.forEach((unicorn, index) => {
+        if (!unicorn) return;
+        
+        // Use ref objects for mutable values
+        const unicornRespawnPauseRef = { value: unicorn.respawnPause || 0 };
+        const randomStepsLeftRef = { value: randomStepsLeft };
+        
+        const unicornResult = updateUnicorn(
+          dt,
+          unicorn,
+          player,
+          maze,
+          switches,
+          portals,
+          gameState,
+          unicornRespawnPauseRef,
+          randomStepsLeftRef,
+          unicornTrail,
+          unicornStars,
+          invincibleTimer,
+          getSwitchAt
+        );
+        
+        // Check for bridge/tunnel violations - pause game if detected
+        if (unicornResult && unicornResult.pauseGame) {
+          gameState = STATE.PAUSED;
+          pauseReason = "manual"; // Debug pause - treat as manual
+          updateUI();
+          console.error("GAME PAUSED due to unicorn bridge/tunnel violation");
+          console.error("Violation details:", unicornResult.violationInfo);
+          // Don't continue processing - game is paused
+        }
+        
+        // Update unicorn's respawn pause
+        unicorn.respawnPause = unicornRespawnPauseRef.value;
+        
+        if (unicornResult && unicornResult.newStars) {
+          unicornStars.push(...unicornResult.newStars);
+        }
+      });
       
       updateTrail(dt);
       updateStars(dt);
@@ -1056,44 +1485,63 @@ function loop(timestamp) {
     if (invincibleTimer > 0) {
       invincibleTimer -= dt;
       if (invincibleTimer <= 0) {
+        invincibleTimer = 0;
         gameState = STATE.PLAYING_NORMAL;
+        // Start the 20 second delay before gem can respawn
+        gemRespawnDelayAfterInvincible = GEM_RESPAWN_DELAY_AFTER_INVINCIBLE;
         updateUI();
       }
     }
 
-    // Skip unicorn collision checks in bridges and switches debug modes
+    // v1.3: Check collisions with all unicorns (skip in bridges and switches debug modes)
     if (MOVEMENT_DEBUG !== "bridges" && MOVEMENT_DEBUG !== "switches") {
-      // No collision effects while unicorn is in respawn pause; it's effectively not there
-      // Also check if player and unicorn are on the same layer - no collision if on different layers
-      if (unicornRespawnPause <= 0 && unicorn && player.layer === unicorn.layer && rectanglesOverlap(player, unicorn)) {
-        if (gameState === STATE.PLAYING_INVINCIBLE) {
-          // Tag unicorn once per invincibility window
-          if (!unicornTagged) {
-            unicornTagged = true;
-            score += 10;
-            floatTexts.push({ x: unicorn.x, y: unicorn.y - 10, text: "+10", life: 0.8, maxLife: 0.8 });
+      for (const unicorn of unicorns) {
+        if (!unicorn) continue;
+        
+        // No collision effects while unicorn is in respawn pause; it's effectively not there
+        // Also check if player and unicorn are on the same layer - no collision if on different layers
+        if ((unicorn.respawnPause || 0) <= 0 && player.layer === unicorn.layer && rectanglesOverlap(player, unicorn)) {
+          if (gameState === STATE.PLAYING_INVINCIBLE) {
+            // Tag unicorn - each unicorn can be tagged once per gem/invincibility window
+            // v1.3: Track tagged state per unicorn, not globally, so multiple unicorns can be caught
+            if (!unicorn.tagged) {
+              unicorn.tagged = true;
+              score += 10;
+              floatTexts.push({ x: unicorn.x, y: unicorn.y - 10, text: "+10", life: 0.8, maxLife: 0.8 });
 
-            // Respawn unicorn at maze center and end invincibility
-            const centerGrid = { row: Math.floor(ROWS / 2), col: Math.floor(COLS / 2) };
-            const centerPos = gridToPixel(centerGrid.col, centerGrid.row);
-            unicorn.x = centerPos.x;
-            unicorn.y = centerPos.y;
-            unicorn.dirX = 0;
-            unicorn.dirY = 0;
+              // Respawn unicorn at maze center
+              const centerGrid = { row: Math.floor(ROWS / 2), col: Math.floor(COLS / 2) };
+              const centerPos = gridToPixel(centerGrid.col, centerGrid.row);
+              unicorn.x = centerPos.x;
+              unicorn.y = centerPos.y;
+              unicorn.dirX = 0;
+              unicorn.dirY = 0;
+              unicorn.respawnPause = 3; // seconds of pause before moving again
 
-            invincibleTimer = 0;
-            unicornRespawnPause = 3; // seconds of pause before moving again
-            gameState = STATE.PLAYING_NORMAL;
-            updateUI();
+              // Don't end invincibility - let it continue so other unicorns can be caught
+              // Invincibility will end naturally when invincibleTimer runs out
+              updateUI();
+            }
+            // Continue checking other unicorns - don't break
+          } else {
+            // v1.3: Lives system - handle death
+            console.log('[Collision] Player hit by unicorn', { 
+              unicornIndex: unicorns.indexOf(unicorn),
+              playerPos: { x: player.x, y: player.y },
+              unicornPos: { x: unicorn.x, y: unicorn.y },
+              lives,
+              gameState
+            });
+            handlePlayerDeath();
+            console.log('[Collision] After handlePlayerDeath, gameState:', gameState);
+            break; // Exit the unicorn collision loop to avoid multiple collisions this frame
           }
-        } else {
-          gameState = STATE.GAMEOVER;
-          updateUI();
         }
       }
     }
   }
 
+  // v1.3: Pass unicorns array instead of single unicorn
   draw(
     ctx,
     maze,
@@ -1101,38 +1549,66 @@ function loop(timestamp) {
     switches,
     dots,
     gem,
-    gemCooldown,
     unicornTrail,
     unicornStars,
     floatTexts,
     player,
-    unicorn,
+    unicorns,
     gameState,
     levelIntroTimer,
     levelIntroText,
     unicornRespawnPause,
     invincibleTimer,
     getSwitchAt,
-    MOVEMENT_DEBUG
+    MOVEMENT_DEBUG,
+    pauseReason,
+    lives
   );
   
-  // Update debug HUD (only when not paused, so you can copy the info)
-  if (MOVEMENT_DEBUG && gameState !== STATE.PAUSED) {
+  // Update debug HUD (when any debug flag is enabled, and not paused so you can copy the info)
+  if ((MOVEMENT_DEBUG || DEBUG_PLAYER || DEBUG_UNICORN || DEBUG_PORTALS || DEBUG_BRIDGES || DEBUG_SWITCHES) && gameState !== STATE.PAUSED) {
     updateDebugHUD();
   }
   
   requestAnimationFrame(loop);
 }
 
-// Initialize
+// v1.3: Initialize - load high scores
+(async () => {
+  highScores = await storage.loadHighScores();
+  updateUI();
+})();
+
+// Initialize entities
 const initialSpawns = { player: { row: 1, col: 1 }, unicorn: { row: 13, col: 19 } };
 const entities = resetEntities(initialSpawns);
 player = entities.player;
-unicorn = entities.unicorn;
+unicorns = entities.unicorns || (entities.unicorn ? [entities.unicorn] : []);
 updateUI();
-// Show debug HUD if in debug mode
-if (MOVEMENT_DEBUG && debugHud) {
+// Show debug HUD if any debug flag is enabled
+if ((MOVEMENT_DEBUG || DEBUG_PLAYER || DEBUG_UNICORN || DEBUG_PORTALS || DEBUG_BRIDGES || DEBUG_SWITCHES) && debugHud) {
   debugHud.style.display = "block";
+}
+
+// v1.3: Register service worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then((registration) => {
+        console.log('[Service Worker] Registered:', registration.scope);
+      })
+      .catch((error) => {
+        console.error('[Service Worker] Registration failed:', error);
+        // Service worker failure shouldn't block the game
+      });
+  });
+}
+
+// v1.3: Mobile landscape lock
+if (screen.orientation && screen.orientation.lock) {
+  screen.orientation.lock('landscape').catch(() => {
+    // Lock may fail in some browsers, that's okay
+  });
 }
 
 // Auto-start first run; restart via button/space still works

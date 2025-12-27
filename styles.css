@@ -105,6 +105,25 @@ body {
   min-height: 320px;
 }
 
+/* v1.3: High score container overlays the game canvas */
+.high-score-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.98);
+  border: 3px solid #7c89ff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(56, 71, 109, 0.4);
+  backdrop-filter: blur(12px);
+  max-width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  width: auto;
+}
+
 #gameCanvas {
   border-radius: 14px;
   border: 4px solid #2c2f48;
@@ -299,5 +318,195 @@ body {
 @media (max-width: 768px) {
   .debug-hud-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* v1.3: High Score Styles - container positioning is now in .game-area section above */
+
+.high-score-entry {
+  text-align: center;
+}
+
+.high-score-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #2c2f48;
+  margin: 0 0 16px 0;
+}
+
+.high-score-prompt {
+  font-size: 18px;
+  color: #40557a;
+  margin: 0 0 16px 0;
+}
+
+.high-score-name-display {
+  font-family: 'Courier New', monospace;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: #7c89ff;
+  margin: 16px 0;
+  padding: 12px;
+  background: #f7f9ff;
+  border: 2px solid #d4ddff;
+  border-radius: 8px;
+}
+
+.high-score-input-area {
+  margin: 24px 0;
+}
+
+.high-score-instructions {
+  font-size: 14px;
+  color: #6179a6;
+  margin: 0 0 16px 0;
+}
+
+.on-screen-keyboard {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.keyboard-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.keyboard-key {
+  min-width: 44px;
+  min-height: 44px;
+  border: 2px solid #d4ddff;
+  border-radius: 8px;
+  background: #fff;
+  color: #2c2f48;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 120ms ease;
+  touch-action: manipulation;
+}
+
+.keyboard-key:active {
+  background: #7c89ff;
+  color: #fff;
+  transform: scale(0.95);
+}
+
+.keyboard-backspace {
+  min-width: 88px;
+}
+
+.high-score-display {
+  text-align: center;
+}
+
+.high-score-table {
+  margin: 24px 0;
+  text-align: left;
+}
+
+.high-score-empty {
+  text-align: center;
+  color: #6179a6;
+  font-style: italic;
+  padding: 24px;
+}
+
+.high-score-row {
+  display: grid;
+  grid-template-columns: 40px 80px 1fr 60px 120px;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e8ebf5;
+  align-items: center;
+}
+
+.high-score-row:first-child {
+  border-top: 2px solid #d4ddff;
+  font-weight: 700;
+  background: #f7f9ff;
+}
+
+.high-score-rank {
+  font-weight: 600;
+  color: #6179a6;
+}
+
+.high-score-name {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: #2c2f48;
+}
+
+.high-score-value {
+  font-weight: 700;
+  color: #7c89ff;
+  text-align: right;
+}
+
+.high-score-level {
+  font-size: 14px;
+  color: #6179a6;
+  text-align: center;
+}
+
+.high-score-time {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #40557a;
+  text-align: right;
+}
+
+/* v1.3: Mobile landscape lock */
+@media (orientation: portrait) and (max-width: 960px) {
+  body::before {
+    content: 'Please rotate your device to landscape mode';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(44, 47, 72, 0.95);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 600;
+    z-index: 10000;
+    text-align: center;
+    padding: 24px;
+  }
+  
+  .page {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .high-score-container {
+    padding: 16px;
+    max-width: 95%;
+    max-height: 85vh;
+  }
+  
+  .high-score-row {
+    grid-template-columns: 30px 60px 1fr 50px 100px;
+    gap: 8px;
+    font-size: 14px;
+  }
+  
+  .high-score-name-display {
+    font-size: 28px;
+    letter-spacing: 6px;
+  }
+  
+  .keyboard-key {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 16px;
   }
 }

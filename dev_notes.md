@@ -46,7 +46,6 @@ All new features are layered via:
 ### 2.1 New Game States
 
 Recommended additions:
-- TUTORIAL
 - ENTER_HIGH_SCORE
 - SHOW_HIGH_SCORES
 
@@ -209,8 +208,7 @@ Unicorn count per level is controlled by level config.
 
 ### 7.2 Spawn Rules
 
-- Each unicorn has a unique spawn tile
-- Spawn tiles must not overlap
+- Each unicorn share a spawn tile
 - Maze factory validates spawn safety
 
 ---
@@ -220,8 +218,8 @@ Unicorn count per level is controlled by level config.
 ### 8.1 Core Concept
 
 Tiles may exist on layers:
-- layer = 0 (ground)
-- layer = 1 (bridge)
+- layer = 1 (tunnles)
+- layer = 2 (floor and bridge)
 
 Entities occupy exactly one layer at a time.
 
@@ -259,34 +257,7 @@ In short:
 
 ---
 
-## 9. Tutorial Path
-
-### 9.1 Design Rules
-
-Tutorial levels are normal levels with flags:
-
-```js
-{
-  tutorial: true,
-  allowSkip: true
-}
-```
-
-- Each tutorial introduces exactly one mechanic
-- Fail states are forgiving
-
-### 9.2 Suggested Tutorial Order
-
-1. Movement & walls
-2. Dots & scoring
-3. Unicorn avoidance
-4. Gems & invincibility
-5. Bridges & tunnels
-6. Switches
-
----
-
-## 10. Maze Factory (v1.3 Notes)
+## 9. Maze Factory (v1.3 Notes)
 
 Responsibilities:
 - Select template
@@ -339,8 +310,3 @@ The following must not appear in v1.3:
 - Maze uploads
 
 ---
-
-## 14. Guiding Rule
-
-If a feature cannot be explained to an 8-year-old,
-it probably does not belong in v1.3.

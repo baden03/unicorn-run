@@ -43,7 +43,7 @@ export function createUnicornFromDefinition(definition, spawn) {
     definition: def, // Store reference for behavior
     randomStepsLeft: 0,
     respawnPause: 0,
-    tagged: false,
+    tagged: false, // Per-unicorn tagged state for gem invincibility
     lastPortalRow: null, // Track last portal to prevent infinite loops
     lastPortalCol: null,
     portalAnimProgress: 0, // 0-1, animation progress for portal entry/exit

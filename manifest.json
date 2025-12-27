@@ -1,0 +1,25 @@
+{
+  "name": "Unicorn Run",
+  "short_name": "Unicorn Run",
+  "description": "A top-down tile-based chase game with unicorns",
+  "start_url": "/unicorn-run/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "theme_color": "#7c89ff",
+  "background_color": "#f2f5ff",
+  "icons": [
+    {
+      "src": "icons/unicorn_run.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/unicorn_run.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

@@ -317,10 +317,18 @@ export function createMazeForLevel(levelConfig) {
   const newSwitches = buildSwitchesFromMaze(newMaze);
 
   // Spawn positions expressed in grid coordinates
+  // v1.3: Support multiple unicorns from level config
   const spawns = {
     player: { row: 1, col: 1 },
-    unicorn: { row: 13, col: 19 },
   };
+  
+  // Extract unicorn configurations from level config
+  if (levelConfig.unicorns && Array.isArray(levelConfig.unicorns)) {
+    spawns.unicorns = levelConfig.unicorns;
+  } else {
+    // Fallback to single unicorn for backwards compatibility
+    spawns.unicorn = { row: 13, col: 19 };
+  }
 
   return { maze: newMaze, portals: newPortals, switches: newSwitches, spawns };
 }

@@ -96,6 +96,7 @@ Detailed unicorn behavior rules live in [dev_notes](./dev_notes.md).
 ---
 
 ### 3.4 True Over / Under Maze Logic
+*Status*: Complete
 
 Bridges and tunnels in v1.3 use **true over/under logic**, not repurposed portals:
 
@@ -112,23 +113,7 @@ v1.3 limits scope to **single-screen mazes with real tunnels**, keeping gameplay
 
 ---
 
-### 3.5 Tutorial Path (Skippable)
-
-To support new players and younger audiences, v1.3 introduces a **guided tutorial path**:
-
-- Short, focused tutorial levels
-- Each tutorial introduces **one concept at a time**:
-  - Movement & Dots
-  - Gems & Unicorn behavior
-  - Bridges / tunnels
-  - Switches
-- Tutorial can be **skipped entirely** to jump straight into gameplay
-
-The tutorial is built using the same level and maze systems as the main game.
-
----
-
-### 3.6 Lives System (Forgiveness Without Complexity)
+### 3.5 Lives System (Forgiveness Without Complexity)
 
 v1.3 adds a simple lives system:
 
@@ -198,7 +183,6 @@ This includes:
 - Unicorn definition schema
 - Tunnel / over-under collision rules
 - PWA caching and sync strategy
-- Tutorial level structure
 - Testing and edge-case notes
 
 ---

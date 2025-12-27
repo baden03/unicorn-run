@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#7c89ff">
+  <meta name="description" content="Unicorn Run - A top-down tile-based chase game with unicorns">
   <title>Unicorn Run v1.3</title>
+  <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,6 +16,7 @@
         <div class="hud-score-group">
           <div id="score" class="hud-score">Score: 0</div>
           <div id="level" class="hud-level">Level: 1 / 3</div>
+          <div id="lives" class="hud-lives">Lives: 3</div>
         </div>
         <div class="hud-actions">
           <button id="startButton" class="btn primary">Start</button>
@@ -24,6 +28,9 @@
 
     <section class="game-area">
       <canvas id="gameCanvas" width="672" height="480" aria-label="Unicorn Run game canvas"></canvas>
+      <div id="highScoreContainer" class="high-score-container" style="display: none;">
+        <!-- High score entry and display will be inserted here -->
+      </div>
       <div class="joystick joystick-left" id="joystickLeft">
         <div class="joystick-base"></div>
         <div class="joystick-stick"></div>
@@ -89,6 +96,14 @@
           <div class="debug-hud-section" id="debugSectionUnicorn" style="display: none;">
             <h4>Unicorn Debug</h4>
             <div id="debugUnicorn" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section" id="debugSectionGameState" style="display: none;">
+            <h4>Game State & Lives</h4>
+            <div id="debugGameState" class="debug-hud-value">-</div>
+          </div>
+          <div class="debug-hud-section" id="debugSectionCollision" style="display: none;">
+            <h4>Collision Detection</h4>
+            <div id="debugCollision" class="debug-hud-value">-</div>
           </div>
         </div>
       </div>
